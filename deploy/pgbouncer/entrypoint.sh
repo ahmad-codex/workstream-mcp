@@ -51,4 +51,7 @@ EOF
 # pgbouncer can read the auth file.
 chown -R postgres:postgres "$CFG_DIR"
 
-exec setpriv --reuid=70 --regid=70 --clear-groups pgbouncer "$CFG_DIR/pgbouncer.ini"
+# Busybox `setpriv` doesn't support --reuid/--regid and the image has neither
+# su-exec nor gosu, so we drop privileges with `su` and `exec`-replace the
+# wrapping shell so pgbouncer ends up as the supervised process.
+exec su -s /bin/sh postgres -c "exec pgbouncer $CFG_DIR/pgbouncer.ini"
