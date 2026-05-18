@@ -102,7 +102,7 @@ public sealed class TaskRepository : ITaskRepository
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         var sql = $"""
             WITH next AS (
-                SELECT id
+                SELECT id AS picked_id
                 FROM tasks
                 WHERE plan_id = @planId
                   AND (
@@ -121,7 +121,7 @@ public sealed class TaskRepository : ITaskRepository
                 claimed_until  = now() + (@ttlSeconds || ' seconds')::interval,
                 status         = 'claimed'
             FROM next
-            WHERE t.id = next.id
+            WHERE t.id = next.picked_id
             RETURNING {TaskColumns};
             """;
         var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
@@ -139,7 +139,7 @@ public sealed class TaskRepository : ITaskRepository
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         var sql = $"""
             WITH target AS (
-                SELECT id
+                SELECT id AS picked_id
                 FROM tasks
                 WHERE id = @taskId
                   AND (
@@ -156,7 +156,7 @@ public sealed class TaskRepository : ITaskRepository
                 claimed_until  = now() + (@ttlSeconds || ' seconds')::interval,
                 status         = 'claimed'
             FROM target
-            WHERE t.id = target.id
+            WHERE t.id = target.picked_id
             RETURNING {TaskColumns};
             """;
         var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,

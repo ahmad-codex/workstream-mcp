@@ -115,7 +115,7 @@ public sealed class FindingRepository : IFindingRepository
         // Severity ordering: critical > high > medium > low > null. We use a CASE for a stable sort.
         var sql = $"""
             WITH next AS (
-                SELECT f.id
+                SELECT f.id AS picked_id
                 FROM findings f
                 JOIN tasks t ON t.id = f.task_id
                 WHERE t.plan_id = @planId
@@ -139,7 +139,7 @@ public sealed class FindingRepository : IFindingRepository
                 claimed_at     = now(),
                 claimed_until  = now() + (@ttlSeconds || ' seconds')::interval
             FROM next
-            WHERE f.id = next.id
+            WHERE f.id = next.picked_id
             RETURNING {Columns}
             """;
         var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql,
@@ -155,7 +155,7 @@ public sealed class FindingRepository : IFindingRepository
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         var sql = $"""
             WITH next AS (
-                SELECT f.id
+                SELECT f.id AS picked_id
                 FROM findings f
                 JOIN tasks t ON t.id = f.task_id
                 WHERE t.plan_id = @planId
@@ -186,7 +186,7 @@ public sealed class FindingRepository : IFindingRepository
                 claimed_until  = now() + (@ttlSeconds || ' seconds')::interval,
                 status         = 'in_fix'
             FROM next
-            WHERE f.id = next.id
+            WHERE f.id = next.picked_id
             RETURNING {Columns}
             """;
         var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql,

@@ -67,6 +67,10 @@ The smoke script drives one task from pending to review through the MCP surface 
 
 Set `WORKSTREAM_OTEL_ENDPOINT=https://otel-collector:4317` in the environment to ship traces, metrics, and logs to your OTel-compatible backend. Grafana dashboard and Prometheus alerts live in [`deploy/grafana/`](../deploy/grafana/workstream.json) and [`deploy/prometheus/`](../deploy/prometheus/workstream-alerts.yml).
 
+## Slack notifications
+
+Per-project setup walkthrough (Slack app creation, scopes, channel invite, token-into-repo, MCP registration, verification) in [`slack-setup.md`](./slack-setup.md).
+
 ## Backups
 
 `pg_dump` from a cron on the host, nightly, to a separate volume. Weekly off-host copy. The `events` table is part of the dump and durability matters as much as the primary state.

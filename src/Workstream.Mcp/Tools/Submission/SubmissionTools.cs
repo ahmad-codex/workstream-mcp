@@ -552,14 +552,30 @@ internal static class TaskRepoHelpers
         return row?.ToDomain();
     }
 
-    internal sealed record TaskRowSnapshot(
-        Guid Id, Guid PlanId, Guid? PhaseId, string ExternalKey, string Title, string? Description,
-        string[]? Paths, string? ReferencePointer, int Priority, string Status,
-        Guid? AssigneeActorId, string? GithubBoardItemId, int? GithubIssueNumber, string? GithubIssueNodeId,
-        Guid? ClaimActorId, string? ClaimRole, Guid? ClaimToken,
-        DateTimeOffset? ClaimedAt, DateTimeOffset? ClaimedUntil,
-        DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+    internal sealed record TaskRowSnapshot
     {
+        public Guid    Id                  { get; init; }
+        public Guid    PlanId              { get; init; }
+        public Guid?   PhaseId             { get; init; }
+        public string  ExternalKey         { get; init; } = "";
+        public string  Title               { get; init; } = "";
+        public string? Description         { get; init; }
+        public string[]? Paths             { get; init; }
+        public string? ReferencePointer    { get; init; }
+        public int     Priority            { get; init; }
+        public string  Status              { get; init; } = "";
+        public Guid?   AssigneeActorId     { get; init; }
+        public string? GithubBoardItemId   { get; init; }
+        public int?    GithubIssueNumber   { get; init; }
+        public string? GithubIssueNodeId   { get; init; }
+        public Guid?   ClaimActorId        { get; init; }
+        public string? ClaimRole           { get; init; }
+        public Guid?   ClaimToken          { get; init; }
+        public DateTimeOffset? ClaimedAt   { get; init; }
+        public DateTimeOffset? ClaimedUntil{ get; init; }
+        public DateTimeOffset  CreatedAt   { get; init; }
+        public DateTimeOffset  UpdatedAt   { get; init; }
+
         public WorkTask ToDomain() => new(
             Id, PlanId, PhaseId, ExternalKey, Title, Description, Paths, ReferencePointer,
             Priority, Status, AssigneeActorId, GithubBoardItemId, GithubIssueNumber, GithubIssueNodeId,
@@ -593,15 +609,29 @@ internal static class FindingRepoHelpers
         return row?.ToDomain();
     }
 
-    internal sealed record FindingRowSnapshot(
-        Guid Id, Guid TaskId, string ExternalKey,
-        string? Severity, string? InvariantImpact, string? Symptom, string? RootCause,
-        string? ReproSteps, string? AdversarialInput, string? Expected, string? Actual,
-        string? ReferenceComparison, string Status,
-        Guid? ClaimActorId, string? ClaimRole, Guid? ClaimToken,
-        DateTimeOffset? ClaimedAt, DateTimeOffset? ClaimedUntil,
-        DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+    internal sealed record FindingRowSnapshot
     {
+        public Guid    Id                  { get; init; }
+        public Guid    TaskId              { get; init; }
+        public string  ExternalKey         { get; init; } = "";
+        public string? Severity            { get; init; }
+        public string? InvariantImpact     { get; init; }
+        public string? Symptom             { get; init; }
+        public string? RootCause           { get; init; }
+        public string? ReproSteps          { get; init; }
+        public string? AdversarialInput    { get; init; }
+        public string? Expected            { get; init; }
+        public string? Actual              { get; init; }
+        public string? ReferenceComparison { get; init; }
+        public string  Status              { get; init; } = "";
+        public Guid?   ClaimActorId        { get; init; }
+        public string? ClaimRole           { get; init; }
+        public Guid?   ClaimToken          { get; init; }
+        public DateTimeOffset? ClaimedAt   { get; init; }
+        public DateTimeOffset? ClaimedUntil{ get; init; }
+        public DateTimeOffset  CreatedAt   { get; init; }
+        public DateTimeOffset  UpdatedAt   { get; init; }
+
         public Finding ToDomain() => new(
             Id, TaskId, ExternalKey, Severity, InvariantImpact, Symptom, RootCause,
             ReproSteps, AdversarialInput, Expected, Actual, ReferenceComparison,

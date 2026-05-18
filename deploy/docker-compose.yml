@@ -71,6 +71,7 @@ services:
       - admin_token
       - gh_app_key
       - gh_webhook_secret
+      - slack_demo
     ports:
       - "8080:8080"
 
@@ -79,6 +80,7 @@ secrets:
   admin_token:        { file: ./secrets/admin_token }
   gh_app_key:         { file: ./secrets/gh_app_key.pem }
   gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
+  slack_demo:         { file: ./secrets/slack-demo }
 
 volumes:
   workstream-pg-data:
