@@ -1,0 +1,62 @@
+{
+  "title": "Workstream MCP",
+  "uid": "workstream-mcp",
+  "schemaVersion": 38,
+  "tags": ["workstream", "mcp"],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Board sync queue depth",
+      "targets": [{ "expr": "workstream_board_sync_queue_depth", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Slack notify queue depth",
+      "targets": [{ "expr": "workstream_slack_notify_queue_depth", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "type": "graph",
+      "title": "MCP tool p95 duration (seconds) by tool",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (tool, le) (rate(workstream_mcp_tool_duration_seconds_bucket[5m])))",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "type": "graph",
+      "title": "State transitions / minute by plan_type",
+      "targets": [
+        {
+          "expr": "sum by (plan_type, to) (rate(workstream_state_transitions_total[1m])) * 60",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "type": "graph",
+      "title": "DB pool in-use vs waiting",
+      "targets": [
+        { "expr": "workstream_db_pool_in_use", "legendFormat": "in_use", "refId": "A" },
+        { "expr": "workstream_db_pool_waiting", "legendFormat": "waiting", "refId": "B" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+    },
+    {
+      "type": "graph",
+      "title": "Claim contention ratio",
+      "targets": [
+        {
+          "expr": "rate(workstream_claim_contention_no_work_total[5m]) / clamp_min(rate(workstream_claim_contention_total[5m]), 0.0001)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+    }
+  ]
+}

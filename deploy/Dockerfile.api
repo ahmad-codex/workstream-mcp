@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+# Workstream MCP API container.
+# Two-stage build: SDK image compiles, runtime image hosts. Final image is small enough that
+# we don't bother distroless — `mcr.microsoft.com/dotnet/aspnet:10.0-alpine` is ~120 MB and
+# includes ICU which we'd lose with distroless without explicit InvariantGlobalization.
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+WORKDIR /src
+
+# Copy csproj files first for layer caching on dependency restores.
+COPY global.json NuGet.config Directory.Build.props Directory.Packages.props ./
+COPY src/Workstream.Api/Workstream.Api.csproj                   src/Workstream.Api/
+COPY src/Workstream.Core/Workstream.Core.csproj                 src/Workstream.Core/
+COPY src/Workstream.Data/Workstream.Data.csproj                 src/Workstream.Data/
+COPY src/Workstream.GitHub/Workstream.GitHub.csproj             src/Workstream.GitHub/
+COPY src/Workstream.Slack/Workstream.Slack.csproj               src/Workstream.Slack/
+COPY src/Workstream.Telemetry/Workstream.Telemetry.csproj       src/Workstream.Telemetry/
+COPY src/Workstream.Mcp/Workstream.Mcp.csproj                   src/Workstream.Mcp/
+RUN dotnet restore src/Workstream.Api/Workstream.Api.csproj
+
+# Copy the rest of the sources and publish.
+COPY src/ src/
+COPY deploy/migrations/ deploy/migrations/
+RUN dotnet publish src/Workstream.Api/Workstream.Api.csproj -c Release -o /publish /p:UseAppHost=false
+
+# Migrations directory is mounted into /app/migrations so the SqlMigrationRunner finds them
+# without depending on the cwd.
+RUN mkdir -p /publish/migrations && cp deploy/migrations/*.sql /publish/migrations/
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+WORKDIR /app
+RUN adduser -D workstream && chown workstream /app
+USER workstream
+COPY --from=build /publish/ ./
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENTRYPOINT ["dotnet", "Workstream.Api.dll"]

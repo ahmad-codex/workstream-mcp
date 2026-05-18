@@ -1,0 +1,41 @@
+# Prometheus alert rules for workstream-mcp (§11.6).
+# Paging thresholds matched to the metric definitions in src/Workstream.Telemetry/Metrics.cs.
+
+groups:
+  - name: workstream
+    interval: 30s
+    rules:
+      - alert: WorkstreamBoardSyncOldestPendingHigh
+        expr: workstream_board_sync_oldest_pending_seconds > 300
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Workstream board sync backlog older than 5 minutes"
+          description: "Oldest pending board_sync_log row is {{ $value }}s old. Check GitHub API health and BoardSyncWorker logs."
+
+      - alert: WorkstreamSlackNotifyBacklog
+        expr: workstream_slack_notify_queue_depth > 200
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Slack notify outbox is growing unbounded"
+          description: "slack_notify_log has {{ $value }} pending rows. Check Slack token validity and SlackNotifyWorker."
+
+      - alert: WorkstreamDbPoolWaiting
+        expr: workstream_db_pool_waiting > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Postgres connection pool has waiters"
+          description: "{{ $value }} requests are waiting for DB connections. Consider raising pool size or investigating slow queries."
+
+      - alert: WorkstreamClaimTtlExpirationSpike
+        expr: increase(workstream_claim_ttl_expirations_total[15m]) > 50
+        labels:
+          severity: warn
+        annotations:
+          summary: "Unusual claim-TTL expiration rate"
+          description: "More than 50 claim expirations in 15 minutes; agents may be crashing or hung."

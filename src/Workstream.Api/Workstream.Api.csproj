@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <UserSecretsId>workstream-mcp-api</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Workstream.Core\Workstream.Core.csproj" />
+    <ProjectReference Include="..\Workstream.Data\Workstream.Data.csproj" />
+    <ProjectReference Include="..\Workstream.GitHub\Workstream.GitHub.csproj" />
+    <ProjectReference Include="..\Workstream.Slack\Workstream.Slack.csproj" />
+    <ProjectReference Include="..\Workstream.Mcp\Workstream.Mcp.csproj" />
+    <ProjectReference Include="..\Workstream.Telemetry\Workstream.Telemetry.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,39 @@
+# Build output
+bin/
+obj/
+out/
+TestResults/
+*.binlog
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# Local secrets and operator files (NEVER commit)
+# Don't ignore the deploy/secrets/ directory itself — only its contents — so the
+# README explaining what goes in there stays tracked.
+secrets/
+!deploy/secrets/
+deploy/secrets/*
+!deploy/secrets/README.md
+*.pem
+*.key
+.workstream-admin.toml
+.env
+.env.*
+!.env.example
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+logs/

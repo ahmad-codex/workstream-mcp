@@ -1,0 +1,41 @@
+# Caddy reverse-proxy config for mcp.trycrbrl.xyz (§12.3, §13.1).
+#
+# Important: the access log is configured to omit the URL path (which contains the
+# user's bearer token). Without redaction, the log file becomes a credential leak.
+
+{
+  email ops@trycrbrl.xyz
+}
+
+mcp.trycrbrl.xyz {
+  encode gzip zstd
+
+  # Security headers
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    Referrer-Policy           "no-referrer"
+    X-Content-Type-Options    "nosniff"
+    -Server
+  }
+
+  # Forward to the API container
+  reverse_proxy api:8080 {
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For   {remote_host}
+  }
+
+  log {
+    output file /var/log/caddy/workstream.log {
+      roll_size 100mb
+      roll_keep 14
+    }
+    format json
+    # The {uri} field contains the URL token. We intentionally do not include the path in
+    # the structured log output; only method, status, duration, remote-host, and user-agent.
+    fields {
+      common_log delete
+      uri        delete
+      request>uri delete
+    }
+  }
+}

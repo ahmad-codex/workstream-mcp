@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Octokit" />
+    <PackageReference Include="Octokit.GraphQL" />
+    <PackageReference Include="GitHubJwt" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Workstream.Core\Workstream.Core.csproj" />
+    <ProjectReference Include="..\Workstream.Data\Workstream.Data.csproj" />
+  </ItemGroup>
+</Project>

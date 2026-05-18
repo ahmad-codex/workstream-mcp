@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Workstream.Core\Workstream.Core.csproj" />
+    <ProjectReference Include="..\Workstream.Data\Workstream.Data.csproj" />
+    <ProjectReference Include="..\Workstream.GitHub\Workstream.GitHub.csproj" />
+    <ProjectReference Include="..\Workstream.Slack\Workstream.Slack.csproj" />
+  </ItemGroup>
+</Project>

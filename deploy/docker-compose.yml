@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: workstream
+      POSTGRES_USER: workstream
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    volumes:
+      - workstream-pg-data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    secrets:
+      - pg_password
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workstream"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      WORKSTREAM_PUBLIC_BASE_URL: ${WORKSTREAM_PUBLIC_BASE_URL:-http://localhost:8080}
+      WORKSTREAM_DB_CONNECTION: "Host=postgres;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=50;Pooling=true"
+      WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
+      WORKSTREAM_ADMIN_TOKEN_FILE: /run/secrets/admin_token
+      WORKSTREAM_GH_APP_ID: ${WORKSTREAM_GH_APP_ID:-0}
+      WORKSTREAM_GH_INSTALLATION_ID: ${WORKSTREAM_GH_INSTALLATION_ID:-0}
+      WORKSTREAM_GH_APP_KEY_PATH: /run/secrets/gh_app_key
+      WORKSTREAM_GH_WEBHOOK_SECRET_FILE: /run/secrets/gh_webhook_secret
+      WORKSTREAM_OTEL_ENDPOINT: ${WORKSTREAM_OTEL_ENDPOINT:-}
+    secrets:
+      - pg_password
+      - admin_token
+      - gh_app_key
+      - gh_webhook_secret
+    ports:
+      - "8080:8080"
+
+secrets:
+  pg_password:        { file: ./secrets/pg_password }
+  admin_token:        { file: ./secrets/admin_token }
+  gh_app_key:         { file: ./secrets/gh_app_key.pem }
+  gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
+
+volumes:
+  workstream-pg-data:

@@ -1,0 +1,35 @@
+# Declarative bootstrap (§10.2). Apply with: workstream-admin apply bootstrap.yml
+#
+# The CLI diffs this against the server's current state and applies only what changed.
+# Secrets are referenced, not embedded.
+
+plan_types:
+  audit:       { file: profiles/audit.json }
+  development: { file: profiles/development.json }
+
+users:
+  - github_username: moe
+    display_name: Mohamed
+    type: human
+    permissions: [can_override_verdict, can_archive_plan, can_mark_needs_human_review]
+  - github_username: swan-orchestrator
+    type: orchestrator
+
+projects:
+  - slug: memturbo
+    display_name: MemTurboDB
+    repos:
+      - { owner: precoglabs,  repo: memturbodb }
+      - { owner: chroma-core, repo: chroma, reference_only: true }
+    boards:
+      - project_v2_node_id: PVT_xxx
+        column_mapping:
+          backlog:     Backlog
+          in_progress: "In Progress"
+          review:      Review
+          done:        Done
+          blocked:     Blocked
+    slack:
+      workspace_id:        TXXXX
+      channel_id:          CXXXX
+      bot_token_secret_ref: file:///run/secrets/slack-memturbo

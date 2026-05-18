@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="SlackNet" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Workstream.Core\Workstream.Core.csproj" />
+    <ProjectReference Include="..\Workstream.Data\Workstream.Data.csproj" />
+  </ItemGroup>
+</Project>

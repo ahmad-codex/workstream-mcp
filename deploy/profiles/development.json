@@ -1,0 +1,68 @@
+{
+  "id": "development",
+  "display_name": "Development",
+  "requires_findings": false,
+  "retry_cap": 3,
+  "role_ttls": {
+    "developer": "4h",
+    "reviewer":  "1h"
+  },
+  "roles": {
+    "developer": { "primary_execution": true,  "is_reviewer": false },
+    "reviewer":  { "primary_execution": false, "is_reviewer": true  }
+  },
+  "state_graph": {
+    "task_states": [
+      "pending","claimed","in_progress","review","done",
+      "deferred","blocked","needs_human_review","skipped","out_of_scope"
+    ],
+    "task_initial": "pending",
+    "task_terminal": ["done","deferred","needs_human_review","skipped","out_of_scope"],
+    "task_transitions": [
+      { "from": "pending",     "to": "claimed",     "via": "claim_task",        "requires_role": ["developer"] },
+      { "from": "claimed",     "to": "in_progress", "via": "start_work" },
+      { "from": "claimed",     "to": "pending",     "via": "release_claim" },
+      { "from": "in_progress", "to": "review",      "via": "submit_attempt",    "requires_role": ["developer"] },
+      { "from": "in_progress", "to": "pending",     "via": "release_claim" },
+      { "from": "review",      "to": "done",        "via": "submit_review_decision", "verdict": "approved",          "requires_role": ["reviewer"] },
+      { "from": "review",      "to": "in_progress", "via": "submit_review_decision", "verdict": "changes_requested", "requires_role": ["reviewer"], "guard": "below_retry_cap" },
+      { "from": "review",      "to": "needs_human_review", "via": "submit_review_decision", "verdict": "changes_requested", "requires_role": ["reviewer"], "guard": "at_retry_cap" },
+      { "from": "*",           "to": "blocked",     "via": "mark_blocked",      "requires_permission": "can_mark_needs_human_review" },
+      { "from": "blocked",     "to": "in_progress", "via": "unblock" },
+      { "from": "*",           "to": "deferred",    "via": "defer",             "requires_permission": "can_override_verdict" },
+      { "from": "*",           "to": "skipped",     "via": "mark_skipped",      "requires_permission": "can_override_verdict" },
+      { "from": "*",           "to": "out_of_scope","via": "mark_out_of_scope", "requires_permission": "can_override_verdict" },
+      { "from": "*",           "to": "needs_human_review", "via": "escalate" }
+    ],
+    "finding_states": [],
+    "finding_initial": null,
+    "finding_terminal": [],
+    "finding_transitions": [],
+    "board_column_mapping": {
+      "pending":             "backlog",
+      "claimed":             "backlog",
+      "in_progress":         "in_progress",
+      "review":              "review",
+      "done":                "done",
+      "blocked":             "blocked",
+      "deferred":            "done",
+      "needs_human_review":  "blocked",
+      "skipped":             "done",
+      "out_of_scope":        "done"
+    }
+  },
+  "slack_templates": {
+    "task.created":     ":clipboard: New task: *{task_title}*",
+    "task.claimed":     ":wave: *{actor}* claimed *{task_title}*",
+    "task.in_progress": ":wrench: In progress: *{task_title}* — _{actor}_",
+    "task.review":      ":eyes: In review: *{task_title}*",
+    "task.done":        ":white_check_mark: Done: *{task_title}* (commit `{commit}`)",
+    "task.blocked":     ":construction: Blocked: *{task_title}* — {reason}",
+    "plan.activated":   ":rocket: Plan *{plan_name}* active on *{project}*",
+    "plan.completed":   ":tada: Plan *{plan_name}* complete"
+  },
+  "default_notify_on": [
+    "task.created","task.claimed","task.in_progress","task.review","task.done","task.blocked",
+    "plan.activated","plan.completed"
+  ]
+}
