@@ -14,14 +14,14 @@ public sealed class OutboxRepository : IOutboxRepository
 
     // ------- Board sync outbox -------
 
-    public async Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, CancellationToken ct = default)
+    public async Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
-            INSERT INTO board_sync_log (task_id, board_id, target_column, target_status)
-            VALUES (@taskId, @boardId, @targetColumn, @targetStatus)
+            INSERT INTO board_sync_log (task_id, board_id, target_column, target_status, assignee_github_username)
+            VALUES (@taskId, @boardId, @targetColumn, @targetStatus, @assigneeGithubUsername)
             RETURNING id
-            """, new { taskId, boardId, targetColumn, targetStatus }, cancellationToken: ct)).ConfigureAwait(false);
+            """, new { taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<BoardSyncRow>> ClaimBoardSyncBatchAsync(int batchSize, CancellationToken ct = default)
@@ -52,7 +52,8 @@ public sealed class OutboxRepository : IOutboxRepository
                       b.sync_marker   AS SyncMarker,
                       b.attempts      AS Attempts,
                       b.next_attempt_at AS NextAttemptAt,
-                      b.result        AS Result
+                      b.result        AS Result,
+                      b.assignee_github_username AS AssigneeGithubUsername
             """;
         var rows = await conn.QueryAsync<BoardSyncRow>(new CommandDefinition(sql, new { batchSize }, cancellationToken: ct)).ConfigureAwait(false);
         return rows.ToList();

@@ -58,12 +58,15 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
     private readonly ITaskRepository _tasks;
     private readonly IPlanRepository _plans;
     private readonly IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
 
-    public ClaimNextTaskTool(ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes)
+    public ClaimNextTaskTool(ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board)
     {
         _tasks = tasks;
         _plans = plans;
         _planTypes = planTypes;
+        _board = board;
     }
 
     public override string Name => "claim_next_task";
@@ -72,13 +75,13 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
         "must be valid for the plan's plan_type (e.g. 'developer' for dev plans, 'auditor' for audit). " +
         "Returns { task, claim_token } on success or no_work_available if nothing is claimable. Use " +
         "this when the orchestrator or developer is ready to start something new and the system should " +
-        "pick.";
+        "pick. Assigns the bound Project V2 card to the calling actor's GitHub user.";
 
     protected override async Task<ClaimNextTaskOutput> RunAsync(ClaimNextTaskInput input, RequestContext ctx, CancellationToken ct)
     {
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
-        var (pt, _) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
+        var (pt, graph) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, $"plan_type '{plan.PlanTypeId}'"));
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
@@ -86,6 +89,12 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
         var claimed = await _tasks.ClaimNextAsync(input.PlanId, ctx.ActorId, input.Role, ttl, ct).ConfigureAwait(false);
         if (claimed is null)
             throw new WorkstreamException(new WorkstreamError(ErrorCodes.NoWorkAvailable, "no claimable task on this plan"));
+
+        if (plan.PrimaryBoardId is { } boardId)
+        {
+            var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimed.Task.Status);
+            await _board.EnqueueAsync(claimed.Task.Id, boardId, column, claimed.Task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+        }
 
         return new ClaimNextTaskOutput(
             claimed.ClaimToken,
@@ -107,19 +116,22 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
     private readonly ITaskRepository _tasks;
     private readonly IPlanRepository _plans;
     private readonly IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
 
-    public ClaimSpecificTaskTool(ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes)
+    public ClaimSpecificTaskTool(ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board)
     {
         _tasks = tasks;
         _plans = plans;
         _planTypes = planTypes;
+        _board = board;
     }
 
     public override string Name => "claim_specific_task";
     public override string Description =>
         "Claim a specific task by id. Fails with task_unavailable if another actor holds it with an " +
         "unexpired claim. Use when the orchestrator is directing work (e.g. dispatching a subagent " +
-        "to a particular task).";
+        "to a particular task). Assigns the bound Project V2 card to the calling actor's GitHub user.";
 
     protected override async Task<ClaimNextTaskOutput> RunAsync(ClaimSpecificTaskInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -127,7 +139,7 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("task"));
         var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
-        var (pt, _) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
+        var (pt, graph) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, plan.PlanTypeId));
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
@@ -135,6 +147,12 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
         var claimed = await _tasks.ClaimSpecificAsync(input.TaskId, ctx.ActorId, input.Role, ttl, ct).ConfigureAwait(false);
         if (claimed is null)
             throw new WorkstreamException(new WorkstreamError(ErrorCodes.TaskUnavailable, "task is currently held by another actor"));
+
+        if (plan.PrimaryBoardId is { } boardId)
+        {
+            var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimed.Task.Status);
+            await _board.EnqueueAsync(claimed.Task.Id, boardId, column, claimed.Task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+        }
 
         return new ClaimNextTaskOutput(
             claimed.ClaimToken, claimed.Task.Id, claimed.Task.Title, claimed.Task.Status,
@@ -265,9 +283,10 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
     public override string Name => "release_claim";
     public override string Description =>
         "Release a claim without submitting work. Used when an agent decides it cannot complete the " +
-        "work and wants to surface it back to the pool. The task status reverts to pending and the " +
+        "work and wants to surface it back to the pool. The task status reverts to pending, the " +
         "bound board's card moves back to the Backlog column (lazy-created on the project if it " +
-        "wasn't there yet). Slack is intentionally not posted because routine claim cycles are noise.";
+        "wasn't there yet), and its assignees are cleared so the next claimer takes ownership cleanly. " +
+        "Slack is intentionally not posted because routine claim cycles are noise.";
 
     protected override async Task<ReleaseClaimOutput> RunAsync(ReleaseClaimInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -283,7 +302,9 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
                 if (pt is not null)
                 {
                     var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(pt.Value.Graph, task.Status);
-                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, ct).ConfigureAwait(false);
+                    // Empty string = clear assignees on the bound card so the Backlog
+                    // doesn't show a phantom owner after the work returns to the pool.
+                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername: "", ct: ct).ConfigureAwait(false);
                 }
             }
             return new ReleaseClaimOutput(EntityType.Task, task.Id, task.Status);

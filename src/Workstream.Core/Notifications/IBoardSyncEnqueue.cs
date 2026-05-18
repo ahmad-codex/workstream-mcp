@@ -11,5 +11,5 @@ namespace Workstream.Mcp.Notifications;
 /// </summary>
 public interface IBoardSyncEnqueue
 {
-    Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, CancellationToken ct = default);
+    Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default);
 }

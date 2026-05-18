@@ -126,6 +126,40 @@ public sealed class BoardSyncWorker : BackgroundService
                 board.GithubProjectV2NodeId, itemId, board.StatusFieldNodeId, optionId, ct)
                 .ConfigureAwait(false);
 
+            // Assignment is best-effort: a missing GitHub user (e.g. a bot actor with a
+            // fictional username) shouldn't fail the column flip we just succeeded at.
+            // NULL  => don't touch assignees (default for create/transition flows)
+            // ""    => clear all assignees (release_claim)
+            // "x"   => assign to user x (claim, start_work)
+            if (row.AssigneeGithubUsername is not null)
+            {
+                try
+                {
+                    if (row.AssigneeGithubUsername.Length == 0)
+                    {
+                        var draftId = await _gh.LookupDraftIssueIdAsync(itemId, ct).ConfigureAwait(false);
+                        if (draftId is null)
+                            _log.LogDebug("task {TaskId} item {ItemId} is not a draft; skipping clear-assignees", row.TaskId, itemId);
+                        else
+                            await _gh.UpdateDraftIssueAssigneesAsync(draftId, Array.Empty<string>(), ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var (draftId, userId) = await _gh.LookupDraftAndUserAsync(itemId, row.AssigneeGithubUsername, ct).ConfigureAwait(false);
+                        if (draftId is null)
+                            _log.LogDebug("task {TaskId} item {ItemId} is not a draft issue; skipping assignee update", row.TaskId, itemId);
+                        else if (userId is null)
+                            _log.LogInformation("github user '{Login}' not found; leaving task {TaskId} unassigned", row.AssigneeGithubUsername, row.TaskId);
+                        else
+                            await _gh.UpdateDraftIssueAssigneesAsync(draftId, new[] { userId }, ct).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception assignEx)
+                {
+                    _log.LogWarning(assignEx, "assignee update failed for task {TaskId}; column flip already succeeded", row.TaskId);
+                }
+            }
+
             await _outbox.MarkBoardSyncResultAsync(row.Id, "success", null, itemId, null, ct).ConfigureAwait(false);
         }
         catch (Exception ex)

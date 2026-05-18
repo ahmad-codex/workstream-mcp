@@ -230,7 +230,7 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
             foreach (var t in tasks)
             {
                 var column = StateMachineService.ResolveBoardColumn(pt.Graph, t.Status);
-                await _board.EnqueueAsync(t.Id, boardId, column, t.Status, ct).ConfigureAwait(false);
+                await _board.EnqueueAsync(t.Id, boardId, column, t.Status, ct: ct).ConfigureAwait(false);
                 enqueued++;
             }
         }

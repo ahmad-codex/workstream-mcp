@@ -20,8 +20,8 @@ public sealed class OutboxBoardSyncEnqueue : IBoardSyncEnqueue
     private readonly IOutboxRepository _outbox;
     public OutboxBoardSyncEnqueue(IOutboxRepository outbox) => _outbox = outbox;
 
-    public Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, CancellationToken ct = default)
-        => _outbox.EnqueueBoardSyncAsync(taskId, boardId, targetColumn, targetStatus, ct);
+    public Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default)
+        => _outbox.EnqueueBoardSyncAsync(taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername, ct);
 }
 
 /// <summary>

@@ -7,7 +7,7 @@ namespace Workstream.Data.Repositories;
 
 public interface IOutboxRepository
 {
-    Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, CancellationToken ct = default);
+    Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default);
     Task<IReadOnlyList<BoardSyncRow>> ClaimBoardSyncBatchAsync(int batchSize, CancellationToken ct = default);
     Task MarkBoardSyncResultAsync(long id, string result, string? error, string? githubResponseId, TimeSpan? retryDelay, CancellationToken ct = default);
     Task<bool> RecentSyncMarkerExistsAsync(Guid boardItemTaskId, TimeSpan within, CancellationToken ct = default);
@@ -33,6 +33,7 @@ public sealed record BoardSyncRow
     public int    Attempts      { get; init; }
     public DateTime NextAttemptAt { get; init; }
     public string Result        { get; init; } = "pending";
+    public string? AssigneeGithubUsername { get; init; }
 }
 
 public sealed record SlackNotifyRow

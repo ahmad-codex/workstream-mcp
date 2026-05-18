@@ -67,6 +67,82 @@ public sealed class ProjectsV2Client
         return db.GetInt64();
     }
 
+    /// <summary>
+    /// Resolve the inner DraftIssue node id for a ProjectV2Item (the assignment mutation
+    /// takes that, not the wrapping item). Returns null if the item isn't a draft.
+    /// </summary>
+    public async Task<string?> LookupDraftIssueIdAsync(string itemNodeId, CancellationToken ct = default)
+    {
+        const string query = """
+            query($itemId: ID!) {
+              node(id: $itemId) {
+                ... on ProjectV2Item { content { ... on DraftIssue { id } } }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { itemId = itemNodeId }, ct).ConfigureAwait(false);
+        var node = resp.RootElement.GetProperty("data").GetProperty("node");
+        if (node.ValueKind != JsonValueKind.Object) return null;
+        if (!node.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Object) return null;
+        if (!content.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) return null;
+        return id.GetString();
+    }
+
+    /// <summary>
+    /// One round-trip to resolve the data needed to assign a Projects V2 draft item to a
+    /// GitHub user: the inner DraftIssue node id (the assignment mutation takes that, not
+    /// the wrapping ProjectV2Item) and the user's node id. Returns nulls when either
+    /// lookup fails (user doesn't exist on GitHub, item isn't a draft, etc.) so the
+    /// caller can skip without failing the whole board sync.
+    /// </summary>
+    public async Task<(string? DraftIssueNodeId, string? UserNodeId)> LookupDraftAndUserAsync(
+        string itemNodeId, string githubLogin, CancellationToken ct = default)
+    {
+        const string query = """
+            query($itemId: ID!, $login: String!) {
+              item: node(id: $itemId) {
+                ... on ProjectV2Item {
+                  content { ... on DraftIssue { id } }
+                }
+              }
+              user(login: $login) { id }
+            }
+            """;
+        var resp = await SendAsync(query, new { itemId = itemNodeId, login = githubLogin }, ct).ConfigureAwait(false);
+        var data = resp.RootElement.GetProperty("data");
+        string? draftId = null;
+        if (data.TryGetProperty("item", out var item) && item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object
+            && content.TryGetProperty("id", out var did) && did.ValueKind == JsonValueKind.String)
+        {
+            draftId = did.GetString();
+        }
+        string? userId = null;
+        if (data.TryGetProperty("user", out var user) && user.ValueKind == JsonValueKind.Object
+            && user.TryGetProperty("id", out var uid) && uid.ValueKind == JsonValueKind.String)
+        {
+            userId = uid.GetString();
+        }
+        return (draftId, userId);
+    }
+
+    /// <summary>
+    /// Replace the assignee list on a Projects V2 draft issue. Empty list clears all
+    /// assignees. Note: <paramref name="draftIssueNodeId"/> is the DraftIssue id, not
+    /// the wrapping ProjectV2Item id — resolve via <see cref="LookupDraftAndUserAsync"/>.
+    /// </summary>
+    public async Task UpdateDraftIssueAssigneesAsync(string draftIssueNodeId, IReadOnlyList<string> assigneeNodeIds, CancellationToken ct = default)
+    {
+        const string query = """
+            mutation($draftIssueId: ID!, $assigneeIds: [ID!]) {
+              updateProjectV2DraftIssue(input: { draftIssueId: $draftIssueId, assigneeIds: $assigneeIds }) {
+                draftIssue { id }
+              }
+            }
+            """;
+        await SendAsync(query, new { draftIssueId = draftIssueNodeId, assigneeIds = assigneeNodeIds }, ct).ConfigureAwait(false);
+    }
+
     public async Task UpdateItemStatusFieldAsync(string projectNodeId, string itemNodeId, string statusFieldNodeId, string optionId, CancellationToken ct = default)
     {
         const string query = """

@@ -68,7 +68,9 @@ public sealed class StartWorkTool : McpTool<StartWorkInput, StartWorkOutput>
             eventType: "started_work", eventPayloadJson: null, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated, "task.in_progress", ctx, ct).ConfigureAwait(false);
+        await NotificationHelpers.EnqueueBoardAndSlackAsync(
+            _boardSync, _slack, _plans, plan, pt, updated, "task.in_progress", ctx, ct,
+            assigneeGithubUsername: ctx.GithubUsername).ConfigureAwait(false);
 
         return new StartWorkOutput(updated.Id, updated.Status);
     }
@@ -666,12 +668,13 @@ internal static class NotificationHelpers
         string notificationType,
         RequestContext ctx,
         CancellationToken ct,
-        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null)
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null,
+        string? assigneeGithubUsername = null)
     {
         if (plan.PrimaryBoardId is { } boardId)
         {
             var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
-            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, ct).ConfigureAwait(false);
+            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername, ct).ConfigureAwait(false);
         }
         await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
