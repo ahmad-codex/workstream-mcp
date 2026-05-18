@@ -51,12 +51,14 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ["status"]     = task.Status,
         });
         var threadTs = await _outbox.GetParentSlackTsAsync(EntityType.Task, task.Id, ct).ConfigureAwait(false);
-        await _outbox.EnqueueSlackAsync(new SlackNotifyRow(
-            Id: 0, EventId: null, ProjectId: plan.ProjectId, PlanId: plan.Id,
-            EntityType: EntityType.Task, EntityId: task.Id,
-            ChannelId: channel, NotificationType: notificationType,
-            Body: body, ThreadTs: threadTs, SlackTs: null,
-            Attempts: 0, NextAttemptAt: DateTimeOffset.UtcNow, Result: "pending"), ct).ConfigureAwait(false);
+        await _outbox.EnqueueSlackAsync(new SlackNotifyRow
+        {
+            ProjectId = plan.ProjectId, PlanId = plan.Id,
+            EntityType = EntityType.Task, EntityId = task.Id,
+            ChannelId = channel, NotificationType = notificationType,
+            Body = body, ThreadTs = threadTs,
+            NextAttemptAt = DateTime.UtcNow,
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, Finding finding, Guid taskId, string notificationType, RequestContext ctx, CancellationToken ct = default)
@@ -70,12 +72,14 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ["severity"]    = finding.Severity ?? "unknown",
         });
         var threadTs = await _outbox.GetParentSlackTsAsync(EntityType.Task, taskId, ct).ConfigureAwait(false);
-        await _outbox.EnqueueSlackAsync(new SlackNotifyRow(
-            Id: 0, EventId: null, ProjectId: plan.ProjectId, PlanId: plan.Id,
-            EntityType: EntityType.Finding, EntityId: finding.Id,
-            ChannelId: channel, NotificationType: notificationType,
-            Body: body, ThreadTs: threadTs, SlackTs: null,
-            Attempts: 0, NextAttemptAt: DateTimeOffset.UtcNow, Result: "pending"), ct).ConfigureAwait(false);
+        await _outbox.EnqueueSlackAsync(new SlackNotifyRow
+        {
+            ProjectId = plan.ProjectId, PlanId = plan.Id,
+            EntityType = EntityType.Finding, EntityId = finding.Id,
+            ChannelId = channel, NotificationType = notificationType,
+            Body = body, ThreadTs = threadTs,
+            NextAttemptAt = DateTime.UtcNow,
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, string notificationType, RequestContext ctx, CancellationToken ct = default)
@@ -88,12 +92,14 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ["plan_name"] = plan.Name,
             ["project"]   = plan.ProjectId.ToString(),
         });
-        await _outbox.EnqueueSlackAsync(new SlackNotifyRow(
-            Id: 0, EventId: null, ProjectId: plan.ProjectId, PlanId: plan.Id,
-            EntityType: EntityType.Plan, EntityId: plan.Id,
-            ChannelId: channel, NotificationType: notificationType,
-            Body: body, ThreadTs: null, SlackTs: null,
-            Attempts: 0, NextAttemptAt: DateTimeOffset.UtcNow, Result: "pending"), ct).ConfigureAwait(false);
+        await _outbox.EnqueueSlackAsync(new SlackNotifyRow
+        {
+            ProjectId = plan.ProjectId, PlanId = plan.Id,
+            EntityType = EntityType.Plan, EntityId = plan.Id,
+            ChannelId = channel, NotificationType = notificationType,
+            Body = body,
+            NextAttemptAt = DateTime.UtcNow,
+        }, ct).ConfigureAwait(false);
     }
 
     private async Task<string?> ResolveChannelAsync(Plan plan, CancellationToken ct)

@@ -54,7 +54,19 @@ public sealed class PlanProfileFixture
         var config      = "{}";
         var now         = DateTimeOffset.UtcNow;
 
-        return new PlanType(id, displayName, stateGraph, roleTtls, retryCap, null,
-            requires, boardMap, config, now, now);
+        return new PlanType
+        {
+            Id                     = id,
+            DisplayName            = displayName,
+            StateGraphJson         = stateGraph,
+            RoleTtlsJson           = roleTtls,
+            RetryCap               = retryCap,
+            PromptTemplateRef      = null,
+            RequiresFindings       = requires,
+            BoardColumnMappingJson = boardMap,
+            ConfigJson             = config,
+            CreatedAt              = now,
+            UpdatedAt              = now,
+        };
     }
 }

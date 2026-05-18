@@ -14,10 +14,16 @@ using Workstream.Mcp.Notifications;
 using Workstream.Slack;
 using Workstream.Api.Webhooks;
 
+// Npgsql 6+ defaults timestamptz → DateTime; the domain records use DateTimeOffset.
+// Flipping this switch (which must run before any Npgsql type is loaded) restores the
+// 5.x mapping: timestamptz ↔ DateTimeOffset, timestamp ↔ DateTime. We always write UTC,
+// so the strictness this switch loses doesn't bite us.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ----- Configuration -----
-var dbConn         = ResolveSecret(builder.Configuration, "WORKSTREAM_DB_CONNECTION", "WORKSTREAM_DB_PASSWORD_FILE");
+var dbConn         = BuildDbConnectionString(builder.Configuration);
 var adminToken     = ResolveSecret(builder.Configuration, "WORKSTREAM_ADMIN_TOKEN",   "WORKSTREAM_ADMIN_TOKEN_FILE");
 
 builder.Services.Configure<NpgsqlConnectionFactoryOptions>(o => o.ConnectionString = dbConn);
@@ -81,14 +87,18 @@ var app = builder.Build();
 }
 
 // ----- Middleware pipeline -----
+// TokenResolutionMiddleware rewrites /{token}/foo → /foo, so it must run BEFORE routing
+// decides which endpoint matches. Explicit UseRouting() suppresses the implicit one that
+// minimal-API would otherwise insert at the head of the pipeline.
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<TokenResolutionMiddleware>();
+app.UseRouting();
 app.UseMiddleware<RateLimitMiddleware>();
 
 app.MapStatus();
 app.MapMcp();
 app.MapProjectsWebhook();
-// Admin endpoints would map here. v1: deferred to admin CLI hitting endpoints we'll add.
+app.MapAdmin();
 
 await app.RunAsync().ConfigureAwait(false);
 
@@ -104,6 +114,25 @@ static string ResolveSecret(IConfiguration cfg, string envKey, string? fileEnvKe
             value = File.ReadAllText(file).Trim();
     }
     return value;
+}
+
+// Resolves the Postgres connection string. If WORKSTREAM_DB_CONNECTION contains the
+// __from_secret__ placeholder (the pattern from §12.1), substitute it with the contents
+// of WORKSTREAM_DB_PASSWORD_FILE.
+static string BuildDbConnectionString(IConfiguration cfg)
+{
+    var conn = cfg["WORKSTREAM_DB_CONNECTION"] ?? Environment.GetEnvironmentVariable("WORKSTREAM_DB_CONNECTION") ?? "";
+    if (string.IsNullOrEmpty(conn))
+        throw new InvalidOperationException("WORKSTREAM_DB_CONNECTION must be set");
+    if (conn.Contains("__from_secret__", StringComparison.Ordinal))
+    {
+        var pwFile = cfg["WORKSTREAM_DB_PASSWORD_FILE"] ?? Environment.GetEnvironmentVariable("WORKSTREAM_DB_PASSWORD_FILE");
+        if (string.IsNullOrEmpty(pwFile) || !File.Exists(pwFile))
+            throw new InvalidOperationException("__from_secret__ placeholder requires WORKSTREAM_DB_PASSWORD_FILE pointing at a readable file");
+        var pw = File.ReadAllText(pwFile).Trim();
+        conn = conn.Replace("__from_secret__", pw, StringComparison.Ordinal);
+    }
+    return conn;
 }
 
 static string ResolveMigrationsDir()

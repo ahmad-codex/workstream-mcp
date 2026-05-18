@@ -280,16 +280,30 @@ public sealed class FindingRepository : IFindingRepository
             """, new { actorId, id, role }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
-    internal sealed record Row(
-        Guid Id, Guid TaskId, string ExternalKey,
-        string? Severity, string? InvariantImpact, string? Symptom, string? RootCause,
-        string? ReproSteps, string? AdversarialInput, string? Expected, string? Actual,
-        string? ReferenceComparison,
-        string Status,
-        Guid? ClaimActorId, string? ClaimRole, Guid? ClaimToken,
-        DateTimeOffset? ClaimedAt, DateTimeOffset? ClaimedUntil,
-        DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+    // Property-init for Dapper's lenient hydration path (same rationale as TaskRow).
+    internal sealed record Row
     {
+        public Guid    Id                  { get; init; }
+        public Guid    TaskId              { get; init; }
+        public string  ExternalKey         { get; init; } = "";
+        public string? Severity            { get; init; }
+        public string? InvariantImpact     { get; init; }
+        public string? Symptom             { get; init; }
+        public string? RootCause           { get; init; }
+        public string? ReproSteps          { get; init; }
+        public string? AdversarialInput    { get; init; }
+        public string? Expected            { get; init; }
+        public string? Actual              { get; init; }
+        public string? ReferenceComparison { get; init; }
+        public string  Status              { get; init; } = "";
+        public Guid?   ClaimActorId        { get; init; }
+        public string? ClaimRole           { get; init; }
+        public Guid?   ClaimToken          { get; init; }
+        public DateTimeOffset? ClaimedAt   { get; init; }
+        public DateTimeOffset? ClaimedUntil{ get; init; }
+        public DateTimeOffset  CreatedAt   { get; init; }
+        public DateTimeOffset  UpdatedAt   { get; init; }
+
         public Finding ToDomain() => new(
             Id, TaskId, ExternalKey, Severity, InvariantImpact, Symptom, RootCause,
             ReproSteps, AdversarialInput, Expected, Actual, ReferenceComparison,

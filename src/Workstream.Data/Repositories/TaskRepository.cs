@@ -341,32 +341,35 @@ public sealed class TaskRepository : ITaskRepository
     }
 
     // ----- flat row shape -----
-    // We hydrate this and project to the domain record so the nested ClaimState is
-    // constructed cleanly. Trying to convince Dapper to build a record with a nested
-    // struct via column aliasing is more fragile than this five-line projection.
-    internal sealed record TaskRow(
-        Guid     Id,
-        Guid     PlanId,
-        Guid?    PhaseId,
-        string   ExternalKey,
-        string   Title,
-        string?  Description,
-        string[]? Paths,
-        string?  ReferencePointer,
-        int      Priority,
-        string   Status,
-        Guid?    AssigneeActorId,
-        string?  GithubBoardItemId,
-        int?     GithubIssueNumber,
-        string?  GithubIssueNodeId,
-        Guid?    ClaimActorId,
-        string?  ClaimRole,
-        Guid?    ClaimToken,
-        DateTimeOffset? ClaimedAt,
-        DateTimeOffset? ClaimedUntil,
-        DateTimeOffset CreatedAt,
-        DateTimeOffset UpdatedAt)
+    // Property-init (not positional) so Dapper uses parameterless-ctor + property setters.
+    // The positional path requires constructor-signature-exact column types, which Npgsql
+    // doesn't surface for nullable references or for timestamptz (returns DateTime, not
+    // DateTimeOffset). The projection to WorkTask below stays positional because WorkTask
+    // is never hydrated by Dapper.
+    internal sealed record TaskRow
     {
+        public Guid     Id                  { get; init; }
+        public Guid     PlanId              { get; init; }
+        public Guid?    PhaseId             { get; init; }
+        public string   ExternalKey         { get; init; } = "";
+        public string   Title               { get; init; } = "";
+        public string?  Description         { get; init; }
+        public string[]? Paths              { get; init; }
+        public string?  ReferencePointer    { get; init; }
+        public int      Priority            { get; init; }
+        public string   Status              { get; init; } = "pending";
+        public Guid?    AssigneeActorId     { get; init; }
+        public string?  GithubBoardItemId   { get; init; }
+        public int?     GithubIssueNumber   { get; init; }
+        public string?  GithubIssueNodeId   { get; init; }
+        public Guid?    ClaimActorId        { get; init; }
+        public string?  ClaimRole           { get; init; }
+        public Guid?    ClaimToken          { get; init; }
+        public DateTimeOffset? ClaimedAt    { get; init; }
+        public DateTimeOffset? ClaimedUntil { get; init; }
+        public DateTimeOffset  CreatedAt    { get; init; }
+        public DateTimeOffset  UpdatedAt    { get; init; }
+
         public WorkTask ToDomain() => new(
             Id, PlanId, PhaseId, ExternalKey, Title, Description, Paths, ReferencePointer,
             Priority, Status, AssigneeActorId, GithubBoardItemId, GithubIssueNumber, GithubIssueNodeId,

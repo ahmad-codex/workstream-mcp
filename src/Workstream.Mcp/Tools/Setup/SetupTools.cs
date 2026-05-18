@@ -93,11 +93,21 @@ public sealed class AddProjectBoardTool : McpTool<AddProjectBoardInput, AddProje
     protected override async Task<AddProjectBoardOutput> RunAsync(AddProjectBoardInput input, RequestContext ctx, CancellationToken ct)
     {
         AdminGate.Require(ctx);
-        var board = new ProjectBoard(
-            Guid.Empty, input.ProjectId, input.GithubProjectV2NodeId, input.GithubProjectNumber, input.GithubOwner,
-            input.DisplayName, input.StatusFieldNodeId,
-            input.StatusOptionBacklog, input.StatusOptionInProgress, input.StatusOptionReview, input.StatusOptionDone, input.StatusOptionBlocked,
-            Config: "{}", CreatedAt: DateTimeOffset.UtcNow);
+        var board = new ProjectBoard
+        {
+            ProjectId              = input.ProjectId,
+            GithubProjectV2NodeId  = input.GithubProjectV2NodeId,
+            GithubProjectNumber    = input.GithubProjectNumber,
+            GithubOwner            = input.GithubOwner,
+            DisplayName            = input.DisplayName,
+            StatusFieldNodeId      = input.StatusFieldNodeId,
+            StatusOptionBacklog    = input.StatusOptionBacklog,
+            StatusOptionInProgress = input.StatusOptionInProgress,
+            StatusOptionReview     = input.StatusOptionReview,
+            StatusOptionDone       = input.StatusOptionDone,
+            StatusOptionBlocked    = input.StatusOptionBlocked,
+            CreatedAt              = DateTimeOffset.UtcNow,
+        };
         var id = await _repo.AddBoardAsync(board, ct).ConfigureAwait(false);
         return new AddProjectBoardOutput(id);
     }

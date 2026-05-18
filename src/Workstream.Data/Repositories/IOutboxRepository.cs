@@ -18,29 +18,37 @@ public interface IOutboxRepository
     Task<string?> GetParentSlackTsAsync(string entityType, Guid entityId, CancellationToken ct = default);
 }
 
-public sealed record BoardSyncRow(
-    long  Id,
-    Guid? TaskId,
-    Guid? BoardId,
-    string TargetColumn,
-    string TargetStatus,
-    Guid  SyncMarker,
-    int   Attempts,
-    DateTimeOffset NextAttemptAt,
-    string Result);
+// Property-style records (not positional) so Dapper uses the parameterless constructor +
+// init-only setters with lenient per-column type conversion (Guid? ↔ Guid, DateTimeOffset ↔
+// DateTime). Positional records force Dapper into strict constructor-signature matching
+// which fails on those nullable / timestamp pairings.
+public sealed record BoardSyncRow
+{
+    public long   Id            { get; init; }
+    public Guid?  TaskId        { get; init; }
+    public Guid?  BoardId       { get; init; }
+    public string TargetColumn  { get; init; } = "";
+    public string TargetStatus  { get; init; } = "";
+    public Guid   SyncMarker    { get; init; }
+    public int    Attempts      { get; init; }
+    public DateTime NextAttemptAt { get; init; }
+    public string Result        { get; init; } = "pending";
+}
 
-public sealed record SlackNotifyRow(
-    long Id,
-    long? EventId,
-    Guid? ProjectId,
-    Guid? PlanId,
-    string EntityType,
-    Guid   EntityId,
-    string ChannelId,
-    string NotificationType,
-    string Body,
-    string? ThreadTs,
-    string? SlackTs,
-    int   Attempts,
-    DateTimeOffset NextAttemptAt,
-    string Result);
+public sealed record SlackNotifyRow
+{
+    public long    Id               { get; init; }
+    public long?   EventId          { get; init; }
+    public Guid?   ProjectId        { get; init; }
+    public Guid?   PlanId           { get; init; }
+    public string  EntityType       { get; init; } = "";
+    public Guid    EntityId         { get; init; }
+    public string  ChannelId        { get; init; } = "";
+    public string  NotificationType { get; init; } = "";
+    public string  Body             { get; init; } = "";
+    public string? ThreadTs         { get; init; }
+    public string? SlackTs          { get; init; }
+    public int     Attempts         { get; init; }
+    public DateTime NextAttemptAt   { get; init; }
+    public string  Result           { get; init; } = "pending";
+}

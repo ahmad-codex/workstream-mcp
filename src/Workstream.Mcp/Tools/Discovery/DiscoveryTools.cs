@@ -118,10 +118,33 @@ public sealed class ListPlansTool : McpTool<ListPlansInput, ListPlansOutput>
 
 public sealed record GetPlanDashboardInput(Guid PlanId);
 
+// DashboardPlan, DashboardEvent, DashboardPhaseCounts are constructed manually in C# — they
+// stay positional. The three that Dapper hydrates use property-init for the lenient path.
 public sealed record DashboardPlan(Guid Id, string Name, string Status, string? Objective);
-public sealed record DashboardClaimable(Guid TaskId, string Title, int Priority, string? Phase);
-public sealed record DashboardClaim(Guid TaskId, string Role, DateTimeOffset? ClaimedUntil);
-public sealed record DashboardStuck(Guid TaskId, DateTimeOffset Since, string Status, string? ClaimHolder);
+
+public sealed record DashboardClaimable
+{
+    public Guid    TaskId    { get; init; }
+    public string  Title     { get; init; } = "";
+    public int     Priority  { get; init; }
+    public string? Phase     { get; init; }
+}
+
+public sealed record DashboardClaim
+{
+    public Guid    TaskId        { get; init; }
+    public string  Role          { get; init; } = "";
+    public DateTimeOffset? ClaimedUntil { get; init; }
+}
+
+public sealed record DashboardStuck
+{
+    public Guid    TaskId       { get; init; }
+    public DateTimeOffset Since { get; init; }
+    public string  Status       { get; init; } = "";
+    public string? ClaimHolder  { get; init; }
+}
+
 public sealed record DashboardEvent(long Id, DateTimeOffset At, string EntityType, Guid EntityId, string EventType, string? FromState, string? ToState);
 public sealed record DashboardPhaseCounts(string Name, IReadOnlyDictionary<string, int> Counts);
 
@@ -227,7 +250,14 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
 // ============================================================================
 
 public sealed record GetMyActiveWorkInput;
-public sealed record MyClaim(string EntityType, Guid EntityId, Guid PlanId, string Role, DateTimeOffset? ClaimedUntil);
+public sealed record MyClaim
+{
+    public string EntityType   { get; init; } = "";
+    public Guid   EntityId     { get; init; }
+    public Guid   PlanId       { get; init; }
+    public string Role         { get; init; } = "";
+    public DateTimeOffset? ClaimedUntil { get; init; }
+}
 public sealed record GetMyActiveWorkOutput(IReadOnlyList<MyClaim> Claims);
 
 public sealed class GetMyActiveWorkTool : McpTool<GetMyActiveWorkInput, GetMyActiveWorkOutput>

@@ -45,7 +45,15 @@ public sealed class GetEventLogTool : McpTool<GetEventLogInput, GetEventLogOutpu
 // ============================================================================
 
 public sealed record GetStuckWorkInput(Guid? PlanId = null);
-public sealed record StuckItem(string EntityType, Guid EntityId, string Status, DateTimeOffset Since, string? ClaimHolder, string Reason);
+public sealed record StuckItem
+{
+    public string EntityType   { get; init; } = "";
+    public Guid   EntityId     { get; init; }
+    public string Status       { get; init; } = "";
+    public DateTimeOffset Since { get; init; }
+    public string? ClaimHolder { get; init; }
+    public string  Reason      { get; init; } = "";
+}
 public sealed record GetStuckWorkOutput(IReadOnlyList<StuckItem> Items);
 
 public sealed class GetStuckWorkTool : McpTool<GetStuckWorkInput, GetStuckWorkOutput>

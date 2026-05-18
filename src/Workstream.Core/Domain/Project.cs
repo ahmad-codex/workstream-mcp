@@ -2,44 +2,54 @@ using System;
 
 namespace Workstream.Core.Domain;
 
-public sealed record Project(
-    Guid    Id,
-    Guid?   OrganizationId,
-    string  Slug,
-    string  DisplayName,
-    string? Description,
-    string  Config,
-    DateTimeOffset CreatedAt);
+// Property-init style (not positional) so Dapper uses the parameterless-ctor + property
+// path. See User.cs for the rationale.
+public sealed record Project
+{
+    public Guid    Id             { get; init; }
+    public Guid?   OrganizationId { get; init; }
+    public string  Slug           { get; init; } = "";
+    public string  DisplayName    { get; init; } = "";
+    public string? Description    { get; init; }
+    public string  Config         { get; init; } = "{}";
+    public DateTimeOffset CreatedAt { get; init; }
+}
 
-public sealed record ProjectRepo(
-    Guid    Id,
-    Guid    ProjectId,
-    string  GithubOwner,
-    string  GithubRepo,
-    string  DefaultBranch,
-    bool    IsReferenceOnly,
-    DateTimeOffset CreatedAt);
+public sealed record ProjectRepo
+{
+    public Guid    Id              { get; init; }
+    public Guid    ProjectId       { get; init; }
+    public string  GithubOwner     { get; init; } = "";
+    public string  GithubRepo      { get; init; } = "";
+    public string  DefaultBranch   { get; init; } = "main";
+    public bool    IsReferenceOnly { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+}
 
-public sealed record ProjectBoard(
-    Guid    Id,
-    Guid    ProjectId,
-    string  GithubProjectV2NodeId,
-    int     GithubProjectNumber,
-    string  GithubOwner,
-    string  DisplayName,
-    string  StatusFieldNodeId,
-    string  StatusOptionBacklog,
-    string  StatusOptionInProgress,
-    string  StatusOptionReview,
-    string  StatusOptionDone,
-    string? StatusOptionBlocked,
-    string  Config,
-    DateTimeOffset CreatedAt);
+public sealed record ProjectBoard
+{
+    public Guid    Id                       { get; init; }
+    public Guid    ProjectId                { get; init; }
+    public string  GithubProjectV2NodeId    { get; init; } = "";
+    public int     GithubProjectNumber      { get; init; }
+    public string  GithubOwner              { get; init; } = "";
+    public string  DisplayName              { get; init; } = "";
+    public string  StatusFieldNodeId        { get; init; } = "";
+    public string  StatusOptionBacklog      { get; init; } = "";
+    public string  StatusOptionInProgress   { get; init; } = "";
+    public string  StatusOptionReview       { get; init; } = "";
+    public string  StatusOptionDone         { get; init; } = "";
+    public string? StatusOptionBlocked      { get; init; }
+    public string  Config                   { get; init; } = "{}";
+    public DateTimeOffset CreatedAt         { get; init; }
+}
 
-public sealed record ProjectSlack(
-    Guid     ProjectId,
-    string   WorkspaceId,
-    string   BotTokenSecretRef,
-    string   DefaultChannelId,
-    string[] NotifyOn,
-    DateTimeOffset CreatedAt);
+public sealed record ProjectSlack
+{
+    public Guid     ProjectId          { get; init; }
+    public string   WorkspaceId        { get; init; } = "";
+    public string   BotTokenSecretRef  { get; init; } = "";
+    public string   DefaultChannelId   { get; init; } = "";
+    public string[] NotifyOn           { get; init; } = Array.Empty<string>();
+    public DateTimeOffset CreatedAt    { get; init; }
+}

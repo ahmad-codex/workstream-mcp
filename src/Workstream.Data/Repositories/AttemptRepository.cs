@@ -150,15 +150,28 @@ public sealed class AttemptRepository : IAttemptRepository
         return row.ToDomain();
     }
 
-    internal sealed record Row(
-        Guid Id, Guid? FindingId, Guid? TaskId, int AttemptNumber,
-        string[]? FilesChanged, string? ApproachSummary, string? SideEffects,
-        string? BuildCommand, string? TestScenario, string? DiffRef, string? CommitHash,
-        Guid? ActorId,
-        Guid? ClaimActorId, string? ClaimRole, Guid? ClaimToken,
-        DateTimeOffset? ClaimedAt, DateTimeOffset? ClaimedUntil,
-        DateTimeOffset CreatedAt)
+    // Property-init for Dapper's lenient hydration path.
+    internal sealed record Row
     {
+        public Guid    Id              { get; init; }
+        public Guid?   FindingId       { get; init; }
+        public Guid?   TaskId          { get; init; }
+        public int     AttemptNumber   { get; init; }
+        public string[]? FilesChanged  { get; init; }
+        public string? ApproachSummary { get; init; }
+        public string? SideEffects     { get; init; }
+        public string? BuildCommand    { get; init; }
+        public string? TestScenario    { get; init; }
+        public string? DiffRef         { get; init; }
+        public string? CommitHash      { get; init; }
+        public Guid?   ActorId         { get; init; }
+        public Guid?   ClaimActorId    { get; init; }
+        public string? ClaimRole       { get; init; }
+        public Guid?   ClaimToken      { get; init; }
+        public DateTimeOffset? ClaimedAt    { get; init; }
+        public DateTimeOffset? ClaimedUntil { get; init; }
+        public DateTimeOffset  CreatedAt    { get; init; }
+
         public Attempt ToDomain() => new(
             Id, FindingId, TaskId, AttemptNumber,
             FilesChanged, ApproachSummary, SideEffects, BuildCommand, TestScenario, DiffRef, CommitHash,

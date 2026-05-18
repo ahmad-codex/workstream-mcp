@@ -2,16 +2,18 @@ using System;
 
 namespace Workstream.Core.Domain;
 
-public sealed record Event(
-    long    Id,
-    DateTimeOffset At,
-    Guid?   ActorId,
-    string  EntityType,
-    Guid    EntityId,
-    string  EventType,
-    string? FromState,
-    string? ToState,
-    string  Payload);   // JSONB string
+public sealed record Event
+{
+    public long    Id          { get; init; }
+    public DateTimeOffset At   { get; init; }
+    public Guid?   ActorId     { get; init; }
+    public string  EntityType  { get; init; } = "";
+    public Guid    EntityId    { get; init; }
+    public string  EventType   { get; init; } = "";
+    public string? FromState   { get; init; }
+    public string? ToState     { get; init; }
+    public string  Payload     { get; init; } = "{}";
+}
 
 /// <summary>
 /// Standard event types written to the <c>events</c> table.
