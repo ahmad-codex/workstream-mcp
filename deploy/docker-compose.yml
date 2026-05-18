@@ -18,18 +18,47 @@ services:
       timeout: 5s
       retries: 10
 
+  # PgBouncer in transaction-pool mode. The API points its Npgsql connection string at
+  # pgbouncer:6432 instead of postgres:5432; pgbouncer multiplexes API connections onto
+  # a smaller pool of real Postgres connections (§12.2).
+  #
+  # Constraints of transaction-pool mode that we satisfy:
+  #   * No server-side prepared statements (Npgsql's `Max Auto Prepare` defaults to 0)
+  #   * No LISTEN/NOTIFY consumers (we emit notifies but no live consumer is wired yet)
+  #   * SET runs inside a transaction or via `SET LOCAL` (we don't use session SETs)
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.1-p0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./pgbouncer/entrypoint.sh:/usr/local/bin/workstream-pgbouncer-start:ro
+    secrets:
+      - pg_password
+    # Bypass edoburu's stock entrypoint — its CMD path differs across image versions.
+    # Our script reads /run/secrets/pg_password, writes a userlist + pgbouncer.ini into
+    # /tmp/pgbouncer/, and execs pgbouncer directly.
+    entrypoint: ["/bin/sh", "/usr/local/bin/workstream-pgbouncer-start"]
+    ports:
+      - "6432:6432"   # debug only — production proxy wouldn't publish
+
   api:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.api
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      pgbouncer:
+        condition: service_started   # pgbouncer's healthcheck needs psql which the slim image lacks; service_started is enough since pgbouncer itself depends_on postgres healthy
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       WORKSTREAM_PUBLIC_BASE_URL: ${WORKSTREAM_PUBLIC_BASE_URL:-http://localhost:8080}
-      WORKSTREAM_DB_CONNECTION: "Host=postgres;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=50;Pooling=true"
+      # Npgsql settings tuned for pgbouncer transaction mode:
+      #   * Maximum Pool Size kept modest (10) — the real connection pool is pgbouncer's
+      #   * No Reset On Close=true — pgbouncer's server_reset_query handles state cleanup
+      #   * Max Auto Prepare=0 — defaults already, but explicit guards against accidental flip
+      WORKSTREAM_DB_CONNECTION: "Host=pgbouncer;Port=6432;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=10;Pooling=true;No Reset On Close=true;Max Auto Prepare=0"
       WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
       WORKSTREAM_ADMIN_TOKEN_FILE: /run/secrets/admin_token
       WORKSTREAM_GH_APP_ID: ${WORKSTREAM_GH_APP_ID:-0}
