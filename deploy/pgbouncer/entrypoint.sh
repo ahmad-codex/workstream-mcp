@@ -3,6 +3,11 @@
 # Reads the Postgres password from /run/secrets/pg_password, generates
 # /tmp/pgbouncer/{userlist.txt,pgbouncer.ini}, then execs pgbouncer.
 #
+# We're invoked as root (compose sets `user: "0"` on the service) so we can
+# read /run/secrets/pg_password — Docker mounts secrets as root:root 0400 on
+# Linux. We write the userlist + ini, chown to postgres, then su-exec down to
+# the postgres user because pgbouncer refuses to run as root.
+#
 # Auth type is `plain` because the API and pgbouncer share a Docker network — the
 # client→pgbouncer hop never crosses an untrusted boundary. The pgbouncer→postgres
 # hop still negotiates SCRAM via libpq (pgbouncer hands the plain password to
@@ -42,4 +47,8 @@ log_connections = 0
 log_disconnections = 0
 EOF
 
-exec pgbouncer "$CFG_DIR/pgbouncer.ini"
+# Hand ownership of the generated config to the postgres user so su-exec'd
+# pgbouncer can read the auth file.
+chown -R postgres:postgres "$CFG_DIR"
+
+exec su-exec postgres pgbouncer "$CFG_DIR/pgbouncer.ini"
