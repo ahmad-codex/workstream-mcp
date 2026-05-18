@@ -51,4 +51,4 @@ EOF
 # pgbouncer can read the auth file.
 chown -R postgres:postgres "$CFG_DIR"
 
-exec su-exec postgres pgbouncer "$CFG_DIR/pgbouncer.ini"
+exec setpriv --reuid=70 --regid=70 --clear-groups pgbouncer "$CFG_DIR/pgbouncer.ini"
