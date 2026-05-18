@@ -22,9 +22,14 @@ namespace Workstream.Api.Mcp;
 /// </summary>
 public static class JsonRpcEndpoint
 {
+    // MCP wire format is camelCase: protocolVersion, serverInfo, listChanged, inputSchema, etc.
+    // PropertyNameCaseInsensitive lets us accept tool arguments in either camelCase or
+    // snake_case — orchestrator LLMs are sloppy about casing, so being lenient on input
+    // costs nothing.
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
