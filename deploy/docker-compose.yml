@@ -10,11 +10,10 @@ services:
       - workstream-pg-data:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     secrets:
-      # Mode 0444 — postgres reads the password file as the `postgres` user inside
-      # the image, which isn't root. Default 0400 root:root → EACCES.
-      - source: pg_password
-        target: pg_password
-        mode: 0444
+      # postgres's docker-entrypoint.sh reads the password file as root before
+      # gosu-stepping down to the `postgres` user, so the default root:root 0400
+      # mount works here without any override.
+      - pg_password
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U workstream"]
@@ -33,15 +32,18 @@ services:
   pgbouncer:
     image: edoburu/pgbouncer:v1.25.1-p0
     restart: unless-stopped
+    # Override the image's default `postgres` user so the entrypoint can read
+    # /run/secrets/pg_password (mounted root:root 0400 by Docker on Linux —
+    # compose's per-service `mode:` override is silently ignored by the
+    # deployed CLI version). Same reasoning as Dockerfile.api running as root.
+    user: "0"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./pgbouncer/entrypoint.sh:/usr/local/bin/workstream-pgbouncer-start:ro
     secrets:
-      - source: pg_password
-        target: pg_password
-        mode: 0444
+      - pg_password
     # Bypass edoburu's stock entrypoint — its CMD path differs across image versions.
     # Our script reads /run/secrets/pg_password, writes a userlist + pgbouncer.ini into
     # /tmp/pgbouncer/, and execs pgbouncer directly.
@@ -77,24 +79,14 @@ services:
       WORKSTREAM_GH_WEBHOOK_SECRET_FILE: /run/secrets/gh_webhook_secret
       WORKSTREAM_OTEL_ENDPOINT: ${WORKSTREAM_OTEL_ENDPOINT:-}
     secrets:
-      # Mode 0444 — the api container runs as the non-root `workstream` user (see
-      # Dockerfile.api). Without an explicit mode Docker mounts secrets as
-      # root:root 0400, which the workstream user can't read.
-      - source: pg_password
-        target: pg_password
-        mode: 0444
-      - source: admin_token
-        target: admin_token
-        mode: 0444
-      - source: gh_app_key
-        target: gh_app_key
-        mode: 0444
-      - source: gh_webhook_secret
-        target: gh_webhook_secret
-        mode: 0444
-      - source: slack_demo
-        target: slack_demo
-        mode: 0444
+      # The api container runs as root (see Dockerfile.api comment) so the
+      # default root:root 0400 mount is readable without any per-secret mode
+      # override (which compose v2 silently ignores anyway).
+      - pg_password
+      - admin_token
+      - gh_app_key
+      - gh_webhook_secret
+      - slack_demo
     ports:
       - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 

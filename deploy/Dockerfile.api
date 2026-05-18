@@ -29,8 +29,13 @@ RUN mkdir -p /publish/migrations && cp deploy/migrations/*.sql /publish/migratio
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 WORKDIR /app
-RUN adduser -D workstream && chown workstream /app
-USER workstream
+# Runs as root inside the container. Docker secrets mount as root:root 0400 by
+# default on Linux (the per-service `mode:` override is silently ignored by the
+# compose CLI we deploy on), so dropping privileges to a non-root user would
+# trip EACCES on every secret read. The container is single-process and
+# isolated by docker; the deployment is single-tenant dev preview behind a
+# bound IP. If we ever harden this, drop privileges in the entrypoint after
+# the secrets are read into memory instead.
 COPY --from=build /publish/ ./
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
