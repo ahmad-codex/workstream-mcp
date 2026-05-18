@@ -20,15 +20,30 @@ public sealed record MarkTaskStatusOutput(Guid TaskId, string Status);
 public sealed class MarkTaskStatusTool : McpTool<MarkTaskStatusInput, MarkTaskStatusOutput>
 {
     private readonly ITaskRepository _tasks;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
+    private readonly Workstream.Mcp.Notifications.ISlackNotifyEnqueue _slack;
 
-    public MarkTaskStatusTool(ITaskRepository tasks) => _tasks = tasks;
+    public MarkTaskStatusTool(
+        ITaskRepository tasks,
+        IPlanRepository plans,
+        Workstream.Core.StateMachine.IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
+        Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
+    {
+        _tasks = tasks; _plans = plans; _planTypes = planTypes;
+        _board = board; _slack = slack;
+    }
 
     public override string Name => "mark_task_status";
     public override string Description =>
         "Set a task to a non-normal status: deferred, blocked, skipped, out_of_scope, or " +
         "needs_human_review. Bypasses the claim mechanism (override path) and requires the relevant " +
         "permission flag on the calling actor (can_mark_needs_human_review for blocked/needs_human_review, " +
-        "can_override_verdict for deferred/skipped/out_of_scope).";
+        "can_override_verdict for deferred/skipped/out_of_scope). Fires board + Slack so the bound " +
+        "Project V2 card moves to the matching column and the channel sees a task.blocked-style post " +
+        "with the supplied reason.";
 
     protected override async Task<MarkTaskStatusOutput> RunAsync(MarkTaskStatusInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -48,6 +63,23 @@ public sealed class MarkTaskStatusTool : McpTool<MarkTaskStatusInput, MarkTaskSt
 
         var updated = await _tasks.OverrideStatusAsync(input.TaskId, ctx.ActorId, input.Status, input.Reason, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.NotFound("task"));
+
+        // All these statuses map to non-normal columns (typically Blocked or Done in the
+        // board mapping). Use the task.blocked Slack template since it accepts the
+        // {reason} token the operator supplied.
+        var plan = await _plans.GetAsync(updated.PlanId, ct).ConfigureAwait(false);
+        if (plan is not null)
+        {
+            var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+            if (pt is not null)
+            {
+                var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
+                await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
+                    _board, _slack, _plans, plan, pt.Value, updated, "task.blocked", ctx, ct, extras)
+                    .ConfigureAwait(false);
+            }
+        }
+
         return new MarkTaskStatusOutput(updated.Id, updated.Status);
     }
 }
@@ -112,19 +144,52 @@ public sealed record CreateTaskOutput(Guid Id, string ExternalKey, string Status
 public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 {
     private readonly ITaskRepository _tasks;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
+    private readonly Workstream.Mcp.Notifications.ISlackNotifyEnqueue _slack;
 
-    public CreateTaskTool(ITaskRepository tasks) => _tasks = tasks;
+    public CreateTaskTool(
+        ITaskRepository tasks,
+        IPlanRepository plans,
+        Workstream.Core.StateMachine.IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
+        Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
+    {
+        _tasks = tasks; _plans = plans; _planTypes = planTypes;
+        _board = board; _slack = slack;
+    }
 
     public override string Name => "create_task";
     public override string Description =>
-        "Create a new task on a plan, in pending status. Used by orchestrators that decompose larger " +
-        "work units into tasks at runtime, and by admin tools that import work from external sources.";
+        "Create a new task on a plan, in pending status. The task immediately fires a task.created " +
+        "notification: enqueues a board-sync row so the BoardSyncWorker creates a draft item on the " +
+        "bound GitHub Projects V2 board (Backlog column) on first drain, and posts a Slack message if " +
+        "the project has Slack configured. Used by orchestrators that decompose larger work units into " +
+        "tasks at runtime, and by admin tools that import work from external sources.";
 
     protected override async Task<CreateTaskOutput> RunAsync(CreateTaskInput input, RequestContext ctx, CancellationToken ct)
     {
         var task = await _tasks.InsertAsync(new WorkTaskInsert(
             input.PlanId, input.PhaseId, input.ExternalKey, input.Title, input.Description,
             input.Paths, input.ReferencePointer, input.Priority), ct).ConfigureAwait(false);
+
+        // Fan out so the new task immediately exists on the board (lazy-create on first
+        // worker drain) and gets announced in Slack. Best-effort: if the plan or plan-type
+        // can't be resolved, we still return the task — admin/import flows shouldn't fail
+        // because of a misconfigured downstream.
+        var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false);
+        if (plan is not null)
+        {
+            var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+            if (pt is not null)
+            {
+                await Workstream.Mcp.Tools.Submission.NotificationHelpers
+                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, task, "task.created", ctx, ct)
+                    .ConfigureAwait(false);
+            }
+        }
+
         return new CreateTaskOutput(task.Id, task.ExternalKey, task.Status);
     }
 }
@@ -139,13 +204,27 @@ public sealed record OverrideVerdictOutput(string EntityType, Guid EntityId, str
 public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, OverrideVerdictOutput>
 {
     private readonly ITaskRepository _tasks;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
+    private readonly Workstream.Mcp.Notifications.ISlackNotifyEnqueue _slack;
 
-    public OverrideVerdictTool(ITaskRepository tasks) => _tasks = tasks;
+    public OverrideVerdictTool(
+        ITaskRepository tasks,
+        IPlanRepository plans,
+        Workstream.Core.StateMachine.IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
+        Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
+    {
+        _tasks = tasks; _plans = plans; _planTypes = planTypes;
+        _board = board; _slack = slack;
+    }
 
     public override string Name => "override_verdict";
     public override string Description =>
         "Force a state change on a task without holding its claim. Requires can_override_verdict on " +
-        "the calling actor. Writes an override event with the supplied reason. The only legal way to " +
+        "the calling actor. Writes an override event with the supplied reason, and fires board + Slack " +
+        "so the bound Project V2 card and the channel reflect the new status. The only legal way to " +
         "mutate a row without holding its claim.";
 
     protected override async Task<OverrideVerdictOutput> RunAsync(OverrideVerdictInput input, RequestContext ctx, CancellationToken ct)
@@ -158,6 +237,33 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
 
         var updated = await _tasks.OverrideStatusAsync(input.EntityId, ctx.ActorId, input.NewStatus, input.Reason, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.NotFound("task"));
+
+        // Resolve a Slack notification type from the new status. The board sync uses the
+        // board-column mapping for the actual column flip.
+        var slackType = MapStatusToNotificationType(updated.Status);
+        var plan = await _plans.GetAsync(updated.PlanId, ct).ConfigureAwait(false);
+        if (plan is not null)
+        {
+            var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+            if (pt is not null)
+            {
+                var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
+                await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
+                    _board, _slack, _plans, plan, pt.Value, updated, slackType, ctx, ct, extras)
+                    .ConfigureAwait(false);
+            }
+        }
+
         return new OverrideVerdictOutput(EntityType.Task, updated.Id, updated.Status);
     }
+
+    private static string MapStatusToNotificationType(string status) => status switch
+    {
+        TaskStatus.InProgress       => "task.in_progress",
+        TaskStatus.Review           => "task.review",
+        TaskStatus.Done             => "task.done",
+        TaskStatus.Pending          => "task.created",
+        TaskStatus.Claimed          => "task.claimed",
+        _                           => "task.blocked",   // deferred / blocked / skipped / out_of_scope / needs_human_review
+    };
 }

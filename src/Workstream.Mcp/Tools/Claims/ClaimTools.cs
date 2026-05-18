@@ -247,24 +247,47 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
 {
     private readonly ITaskRepository _tasks;
     private readonly IFindingRepository _findings;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
+    private readonly Workstream.Mcp.Notifications.ISlackNotifyEnqueue _slack;
 
-    public ReleaseClaimTool(ITaskRepository tasks, IFindingRepository findings)
+    public ReleaseClaimTool(
+        ITaskRepository tasks, IFindingRepository findings,
+        IPlanRepository plans, Workstream.Core.StateMachine.IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
+        Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
     {
         _tasks = tasks; _findings = findings;
+        _plans = plans; _planTypes = planTypes; _board = board; _slack = slack;
     }
 
     public override string Name => "release_claim";
     public override string Description =>
         "Release a claim without submitting work. Used when an agent decides it cannot complete the " +
-        "work and wants to surface it back to the pool. The entity status reverts to pending (for " +
-        "tasks in 'claimed') or stays put (for in_progress tasks, since regressing in_progress→pending " +
-        "would be a state-machine violation).";
+        "work and wants to surface it back to the pool. The task status reverts to pending and the " +
+        "bound board's card moves back to the Backlog column (lazy-created on the project if it " +
+        "wasn't there yet). Slack is intentionally not posted because routine claim cycles are noise.";
 
     protected override async Task<ReleaseClaimOutput> RunAsync(ReleaseClaimInput input, RequestContext ctx, CancellationToken ct)
     {
         var task = await _tasks.ReleaseClaimAsync(input.ClaimToken, ctx.ActorId, input.Reason, resetStatusToPending: true, ct).ConfigureAwait(false);
         if (task is not null)
+        {
+            // Move the card back to Backlog. Don't fire Slack — release_claim is normal
+            // claim churn and shouldn't generate channel noise.
+            var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
+            if (plan?.PrimaryBoardId is { } boardId)
+            {
+                var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+                if (pt is not null)
+                {
+                    var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(pt.Value.Graph, task.Status);
+                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, ct).ConfigureAwait(false);
+                }
+            }
             return new ReleaseClaimOutput(EntityType.Task, task.Id, task.Status);
+        }
 
         // Try finding/attempt — not yet implemented in their repos for release-only semantics.
         throw new WorkstreamException(WorkstreamError.StaleClaim());
