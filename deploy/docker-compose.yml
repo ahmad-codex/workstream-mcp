@@ -10,7 +10,11 @@ services:
       - workstream-pg-data:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     secrets:
-      - pg_password
+      # Mode 0444 — postgres reads the password file as the `postgres` user inside
+      # the image, which isn't root. Default 0400 root:root → EACCES.
+      - source: pg_password
+        target: pg_password
+        mode: 0444
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U workstream"]
@@ -35,7 +39,9 @@ services:
     volumes:
       - ./pgbouncer/entrypoint.sh:/usr/local/bin/workstream-pgbouncer-start:ro
     secrets:
-      - pg_password
+      - source: pg_password
+        target: pg_password
+        mode: 0444
     # Bypass edoburu's stock entrypoint — its CMD path differs across image versions.
     # Our script reads /run/secrets/pg_password, writes a userlist + pgbouncer.ini into
     # /tmp/pgbouncer/, and execs pgbouncer directly.
@@ -71,25 +77,36 @@ services:
       WORKSTREAM_GH_WEBHOOK_SECRET_FILE: /run/secrets/gh_webhook_secret
       WORKSTREAM_OTEL_ENDPOINT: ${WORKSTREAM_OTEL_ENDPOINT:-}
     secrets:
-      - pg_password
-      - admin_token
-      - gh_app_key
-      - gh_webhook_secret
-      - slack_demo
+      # Mode 0444 — the api container runs as the non-root `workstream` user (see
+      # Dockerfile.api). Without an explicit mode Docker mounts secrets as
+      # root:root 0400, which the workstream user can't read.
+      - source: pg_password
+        target: pg_password
+        mode: 0444
+      - source: admin_token
+        target: admin_token
+        mode: 0444
+      - source: gh_app_key
+        target: gh_app_key
+        mode: 0444
+      - source: gh_webhook_secret
+        target: gh_webhook_secret
+        mode: 0444
+      - source: slack_demo
+        target: slack_demo
+        mode: 0444
     ports:
       - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 
 secrets:
-  # Mode 0444 — the api container runs as the non-root `workstream` user (see
-  # Dockerfile.api). Without an explicit mode Docker mounts secrets as root:root
-  # 0400, which the workstream user can't read. World-readable is fine here:
-  # the container filesystem is isolated and the secrets only live there at
-  # runtime.
-  pg_password:        { file: ./secrets/pg_password,       mode: 0444 }
-  admin_token:        { file: ./secrets/admin_token,       mode: 0444 }
-  gh_app_key:         { file: ./secrets/gh_app_key.pem,    mode: 0444 }
-  gh_webhook_secret:  { file: ./secrets/gh_webhook_secret, mode: 0444 }
-  slack_demo:         { file: ./secrets/slack-demo,        mode: 0444 }
+  # The `mode` for these mounts is set per-service in the long-form secrets
+  # references above (the top-level secret definition's `mode` is Swarm-only
+  # and rejected by compose's schema validator).
+  pg_password:        { file: ./secrets/pg_password }
+  admin_token:        { file: ./secrets/admin_token }
+  gh_app_key:         { file: ./secrets/gh_app_key.pem }
+  gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
+  slack_demo:         { file: ./secrets/slack-demo }
 
 volumes:
   workstream-pg-data:
