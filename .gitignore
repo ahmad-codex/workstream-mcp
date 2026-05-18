@@ -29,6 +29,13 @@ deploy/secrets/*
 Thumbs.db
 desktop.ini
 
+# Claude Code per-user config and hook artifacts. Team-wide hooks (if any) go in
+# .claude/settings.json which IS committed; the local override and hook scripts
+# are personal.
+.claude/settings.local.json
+.claude/hooks/
+.claude/last-rebuild.log
+
 # Coverage
 coverage/
 *.coverage
