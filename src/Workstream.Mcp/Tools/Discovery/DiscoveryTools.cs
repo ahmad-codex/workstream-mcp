@@ -210,7 +210,10 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
         // conservative.
         var stuck = (await Dapper.SqlMapper.QueryAsync<DashboardStuck>(conn, new Dapper.CommandDefinition("""
             SELECT t.id AS TaskId, t.updated_at AS Since, t.status AS Status,
-                   (SELECT github_username FROM users u WHERE u.id = t.claim_actor_id) AS ClaimHolder
+                   -- citext → text cast: under Server Compatibility Mode=NoTypeLoading
+                   -- Npgsql can't deserialize the citext OID and Dapper trips on
+                   -- GetFieldType (same pattern as UserRepository.Columns).
+                   (SELECT github_username::text FROM users u WHERE u.id = t.claim_actor_id) AS ClaimHolder
             FROM tasks t
             WHERE t.plan_id = @planId
               AND t.claim_token IS NOT NULL
