@@ -11,9 +11,15 @@ public sealed class UserRepository : IUserRepository
     private readonly IDbConnectionFactory _factory;
     public UserRepository(IDbConnectionFactory factory) => _factory = factory;
 
+    // Cast non-builtin column types to text/builtin so Npgsql can hydrate them
+    // when running with `Server Compatibility Mode=NoTypeLoading` (set so the
+    // pool survives a postgres recreate behind pgbouncer). Without the cast
+    // Dapper's GetColumnHash → reader.GetFieldType call trips on the unknown
+    // OID with "Reading as 'System.Object' is not supported for fields having
+    // DataTypeName '-'". citext is from the citext extension; config is jsonb.
     private const string Columns = """
         id AS "Id",
-        github_username AS "GithubUsername",
+        github_username::text AS "GithubUsername",
         display_name AS "DisplayName",
         actor_type AS "ActorType",
         is_active AS "IsActive",
