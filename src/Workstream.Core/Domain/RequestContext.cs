@@ -15,8 +15,16 @@ public sealed record RequestContext(
     bool    CanArchivePlan,
     bool    CanMarkNeedsHumanReview,
     string  TraceId,
-    DateTimeOffset Now)
+    DateTimeOffset Now,
+    string? DisplayName = null)
 {
+    /// <summary>
+    /// User-facing label for templates (Slack body, etc.) — display name when present,
+    /// github username otherwise. Identity/audit code paths should use
+    /// <see cref="GithubUsername"/> directly so logs and event payloads stay stable.
+    /// </summary>
+    public string DisplayActor => string.IsNullOrWhiteSpace(DisplayName) ? GithubUsername : DisplayName!;
+
     public bool HasPermission(string permission) => permission switch
     {
         "can_override_verdict"        => CanOverrideVerdict,

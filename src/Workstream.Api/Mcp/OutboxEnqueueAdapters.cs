@@ -45,7 +45,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         if (channel is null) return;
         var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
         {
-            ["actor"]      = ctx.GithubUsername,
+            ["actor"]      = ctx.DisplayActor,
             ["task_title"] = task.Title,
             ["task_id"]    = task.Id.ToString(),
             ["status"]     = task.Status,
@@ -67,7 +67,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         if (channel is null) return;
         var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
         {
-            ["actor"]       = ctx.GithubUsername,
+            ["actor"]       = ctx.DisplayActor,
             ["finding_key"] = finding.ExternalKey,
             ["severity"]    = finding.Severity ?? "unknown",
         });
@@ -88,7 +88,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         if (channel is null) return;
         var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
         {
-            ["actor"]     = ctx.GithubUsername,
+            ["actor"]     = ctx.DisplayActor,
             ["plan_name"] = plan.Name,
             ["project"]   = plan.ProjectId.ToString(),
         });

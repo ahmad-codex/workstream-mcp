@@ -81,6 +81,7 @@ public sealed class TokenResolutionMiddleware
             CanOverrideVerdict: user.CanOverrideVerdict,
             CanArchivePlan: user.CanArchivePlan,
             CanMarkNeedsHumanReview: user.CanMarkNeedsHumanReview,
+            DisplayName: user.DisplayName,
             TraceId: System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"),
             Now: DateTimeOffset.UtcNow);
 
