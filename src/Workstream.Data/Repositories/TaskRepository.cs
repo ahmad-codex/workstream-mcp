@@ -288,6 +288,22 @@ public sealed class TaskRepository : ITaskRepository
         return updated.ToDomain();
     }
 
+    public async Task SetGithubBoardItemIdAsync(Guid taskId, string boardItemId, long? boardItemNumber, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tasks SET github_board_item_id = @boardItemId, github_board_item_number = COALESCE(@boardItemNumber, github_board_item_number) WHERE id = @taskId",
+            new { taskId, boardItemId, boardItemNumber }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<long?> GetGithubBoardItemNumberAsync(Guid taskId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await conn.ExecuteScalarAsync<long?>(new CommandDefinition(
+            "SELECT github_board_item_number FROM tasks WHERE id = @taskId",
+            new { taskId }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
     public async Task<int> SweepExpiredClaimsAsync(CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);

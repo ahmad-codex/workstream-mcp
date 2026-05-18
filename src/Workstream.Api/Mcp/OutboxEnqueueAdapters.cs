@@ -34,29 +34,71 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     private readonly IOutboxRepository _outbox;
     private readonly IProjectRepository _projects;
 
-    public OutboxSlackNotifyEnqueue(IOutboxRepository outbox, IProjectRepository projects)
+    public OutboxSlackNotifyEnqueue(IOutboxRepository outbox, IProjectRepository projects, ITaskRepository tasks)
     {
-        _outbox = outbox; _projects = projects;
+        _outbox = outbox; _projects = projects; _tasks = tasks;
     }
 
-    public async Task EnqueueForTaskAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, WorkTask task, string notificationType, RequestContext ctx, CancellationToken ct = default)
+    private readonly ITaskRepository _tasks;
+
+    public async Task EnqueueForTaskAsync(
+        Plan plan, (PlanType Row, StateGraph Graph) pt, WorkTask task,
+        string notificationType, RequestContext ctx,
+        IReadOnlyDictionary<string, string>? extraTokens = null,
+        CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
-        var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
+
+        // Build the clickable title token. If we have a board AND a per-item databaseId,
+        // deep-link to the project's side-pane view for the exact card. Without an item
+        // number, link to the board page. Without a board, just bold the title.
+        string? boardUrl = null;
+        string? itemUrl  = null;
+        if (plan.PrimaryBoardId is { } boardId)
         {
-            ["actor"]      = ctx.DisplayActor,
-            ["task_title"] = task.Title,
-            ["task_id"]    = task.Id.ToString(),
-            ["status"]     = task.Status,
-        });
-        var threadTs = await _outbox.GetParentSlackTsAsync(EntityType.Task, task.Id, ct).ConfigureAwait(false);
+            var board = await _projects.GetBoardAsync(boardId, ct).ConfigureAwait(false);
+            if (board is not null)
+            {
+                boardUrl = $"https://github.com/orgs/{board.GithubOwner}/projects/{board.GithubProjectNumber}";
+                var itemNumber = await _tasks.GetGithubBoardItemNumberAsync(task.Id, ct).ConfigureAwait(false);
+                if (itemNumber is { } n)
+                    itemUrl = $"{boardUrl}/views/1?pane=issue&itemId={n}";
+            }
+        }
+        var linkUrl = itemUrl ?? boardUrl;
+        var titleLink = linkUrl is null ? $"*{task.Title}*" : $"<{linkUrl}|{task.Title}>";
+
+        var tokens = new Dictionary<string, string>
+        {
+            ["actor"]            = ctx.DisplayActor,
+            ["task_title"]       = task.Title,
+            ["task_title_link"]  = titleLink,
+            ["task_id"]          = task.Id.ToString(),
+            ["status"]           = task.Status,
+            ["description"]      = task.Description ?? "",
+            ["priority"]         = task.Priority.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["external_key"]     = task.ExternalKey,
+            ["board_url"]        = boardUrl ?? "",
+            ["item_url"]         = itemUrl ?? boardUrl ?? "",
+        };
+        // Caller-supplied extras override defaults (e.g. commit / reviewer / comments
+        // injected by submit_review_decision for task.done).
+        if (extraTokens is not null)
+            foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
+
+        var body = FormatTemplate(pt.Row, notificationType, tokens);
+        // Per operator preference, each state change is its own top-level post (no
+        // thread reply). The spec's threaded design (§8.4) is preserved as data — the
+        // first slack_ts is still recorded on slack_notify_log — but we no longer
+        // pass thread_ts on subsequent posts. Re-enable by uncommenting the lookup
+        // and assigning to ThreadTs below.
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Task, EntityId = task.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, ThreadTs = threadTs,
+            Body = body,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }
@@ -71,13 +113,12 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ["finding_key"] = finding.ExternalKey,
             ["severity"]    = finding.Severity ?? "unknown",
         });
-        var threadTs = await _outbox.GetParentSlackTsAsync(EntityType.Task, taskId, ct).ConfigureAwait(false);
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Finding, EntityId = finding.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, ThreadTs = threadTs,
+            Body = body,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }

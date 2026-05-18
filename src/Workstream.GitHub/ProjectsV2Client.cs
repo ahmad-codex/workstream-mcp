@@ -31,18 +31,40 @@ public sealed class ProjectsV2Client
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
     }
 
-    public async Task<string> CreateDraftItemAsync(string projectNodeId, string title, string body, CancellationToken ct = default)
+    public async Task<DraftItemResult> CreateDraftItemAsync(string projectNodeId, string title, string body, CancellationToken ct = default)
     {
         const string query = """
             mutation($projectId: ID!, $title: String!, $body: String!) {
               addProjectV2DraftIssue(input: { projectId: $projectId, title: $title, body: $body }) {
-                projectItem { id }
+                projectItem { id databaseId }
               }
             }
             """;
         var resp = await SendAsync(query, new { projectId = projectNodeId, title, body }, ct).ConfigureAwait(false);
-        return resp.RootElement.GetProperty("data").GetProperty("addProjectV2DraftIssue")
-            .GetProperty("projectItem").GetProperty("id").GetString()!;
+        var item = resp.RootElement.GetProperty("data").GetProperty("addProjectV2DraftIssue").GetProperty("projectItem");
+        return new DraftItemResult(
+            NodeId:     item.GetProperty("id").GetString()!,
+            DatabaseId: item.GetProperty("databaseId").GetInt64());
+    }
+
+    /// <summary>
+    /// Lookup the numeric databaseId for an existing project-item node id. Used to
+    /// backfill tasks created before the database-id column existed.
+    /// </summary>
+    public async Task<long?> LookupItemDatabaseIdAsync(string itemNodeId, CancellationToken ct = default)
+    {
+        const string query = """
+            query($id: ID!) {
+              node(id: $id) {
+                ... on ProjectV2Item { id databaseId }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { id = itemNodeId }, ct).ConfigureAwait(false);
+        var node = resp.RootElement.GetProperty("data").GetProperty("node");
+        if (node.ValueKind == JsonValueKind.Null) return null;
+        if (!node.TryGetProperty("databaseId", out var db) || db.ValueKind != JsonValueKind.Number) return null;
+        return db.GetInt64();
     }
 
     public async Task UpdateItemStatusFieldAsync(string projectNodeId, string itemNodeId, string statusFieldNodeId, string optionId, CancellationToken ct = default)
@@ -61,6 +83,64 @@ public sealed class ProjectsV2Client
         {
             projectId = projectNodeId, itemId = itemNodeId, fieldId = statusFieldNodeId, optionId,
         }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// List all V2 projects on an org/user that the installed App can see. Useful when
+    /// discover fails — confirms the App has projects:read and shows actual numbers.
+    /// </summary>
+    public async Task<IReadOnlyList<(int Number, string Title, string Id)>> ListOrgProjectsAsync(string org, CancellationToken ct = default)
+    {
+        const string query = """
+            query($org: String!) {
+              organization(login: $org) {
+                projectsV2(first: 20) { nodes { number title id } }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { org }, ct).ConfigureAwait(false);
+        var list = new List<(int, string, string)>();
+        var nodes = resp.RootElement.GetProperty("data").GetProperty("organization").GetProperty("projectsV2").GetProperty("nodes");
+        foreach (var n in nodes.EnumerateArray())
+        {
+            list.Add((n.GetProperty("number").GetInt32(), n.GetProperty("title").GetString()!, n.GetProperty("id").GetString()!));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// One-shot discovery: given org login + project number, return the project node id,
+    /// the Status field node id, and every Status option's (name → id) mapping. Used by
+    /// <c>/admin/boards/discover</c> to populate <c>project_boards</c> for a new board.
+    /// </summary>
+    public async Task<BoardDiscoveryResult> DiscoverOrgBoardAsync(string org, int projectNumber, CancellationToken ct = default)
+    {
+        const string query = """
+            query($org: String!, $number: Int!) {
+              organization(login: $org) {
+                projectV2(number: $number) {
+                  id
+                  title
+                  field(name: "Status") {
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      options { id name }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { org, number = projectNumber }, ct).ConfigureAwait(false);
+        var project = resp.RootElement.GetProperty("data").GetProperty("organization").GetProperty("projectV2");
+        var projectNodeId    = project.GetProperty("id").GetString()!;
+        var title            = project.GetProperty("title").GetString()!;
+        var field            = project.GetProperty("field");
+        var fieldNodeId      = field.GetProperty("id").GetString()!;
+        var options          = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var opt in field.GetProperty("options").EnumerateArray())
+            options[opt.GetProperty("name").GetString()!] = opt.GetProperty("id").GetString()!;
+        return new BoardDiscoveryResult(projectNodeId, projectNumber, title, fieldNodeId, options);
     }
 
     public async Task<IReadOnlyDictionary<string, string>> GetStatusOptionsAsync(string projectNodeId, string fieldName = "Status", CancellationToken ct = default)
@@ -110,3 +190,12 @@ public sealed class ProjectsV2Client
         return doc;
     }
 }
+
+public sealed record BoardDiscoveryResult(
+    string ProjectNodeId,
+    int    ProjectNumber,
+    string Title,
+    string StatusFieldNodeId,
+    IReadOnlyDictionary<string, string> StatusOptions);
+
+public sealed record DraftItemResult(string NodeId, long DatabaseId);

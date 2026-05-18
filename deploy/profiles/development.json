@@ -52,12 +52,12 @@
     }
   },
   "slack_templates": {
-    "task.created":     ":clipboard: New task: *{task_title}*",
-    "task.claimed":     ":wave: *{actor}* claimed *{task_title}*",
-    "task.in_progress": ":wrench: In progress: *{task_title}* — _{actor}_",
-    "task.review":      ":eyes: In review: *{task_title}*",
-    "task.done":        ":white_check_mark: Done: *{task_title}* (commit `{commit}`)",
-    "task.blocked":     ":construction: Blocked: *{task_title}* — {reason}",
+    "task.created":     ":clipboard: New task: {task_title_link}",
+    "task.claimed":     ":wave: *{actor}* claimed {task_title_link}",
+    "task.in_progress": ":wrench: In progress: {task_title_link} — _{actor}_",
+    "task.review":      ":eyes: In review: {task_title_link} — _{actor}_",
+    "task.done":        ":white_check_mark: Done: {task_title_link} — reviewed by _{reviewer}_\n> {description}",
+    "task.blocked":     ":construction: Blocked: {task_title_link} — {reason}",
     "plan.activated":   ":rocket: Plan *{plan_name}* active on *{project}*",
     "plan.completed":   ":tada: Plan *{plan_name}* complete"
   },

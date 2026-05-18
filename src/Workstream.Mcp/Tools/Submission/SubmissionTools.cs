@@ -515,7 +515,20 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
             TaskStatus.InProgress => "task.in_progress",
             _ => "task.blocked",
         };
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated, slackType, ctx, ct).ConfigureAwait(false);
+
+        // Surface review context in the Slack body via template tokens. For task.done
+        // we expose commit hash, reviewer (the calling actor), decision, comments, and
+        // the total attempt count. Templates pick what to show.
+        var extras = new Dictionary<string, string>
+        {
+            ["commit"]   = input.CommitHash ?? "",
+            ["reviewer"] = ctx.DisplayActor,
+            ["decision"] = input.Decision,
+            ["comments"] = input.Comments ?? "",
+            ["attempts"] = attemptCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        await NotificationHelpers.EnqueueBoardAndSlackAsync(
+            _boardSync, _slack, _plans, plan, pt, updated, slackType, ctx, ct, extras).ConfigureAwait(false);
 
         return new SubmitReviewDecisionOutput(updated.Id, updated.Status);
     }
@@ -652,14 +665,15 @@ internal static class NotificationHelpers
         WorkTask task,
         string notificationType,
         RequestContext ctx,
-        CancellationToken ct)
+        CancellationToken ct,
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null)
     {
         if (plan.PrimaryBoardId is { } boardId)
         {
             var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
             await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, ct).ConfigureAwait(false);
         }
-        await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, ct).ConfigureAwait(false);
+        await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
 
     public static async Task EnqueueFindingSlackAsync(

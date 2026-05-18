@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
@@ -34,6 +36,27 @@ public sealed class PostgresPlanTypeCache : IPlanTypeCache
             var row = await _repo.GetAsync(planTypeId, ct).ConfigureAwait(false);
             if (row is null) return null;
             var graph = StateGraphParser.Parse(row.StateGraphJson);
+
+            // The schema (§4.2) stores board_column_mapping in a separate jsonb column on
+            // plan_types — distinct from the embedded state_graph.board_column_mapping the
+            // spec example shows. The seed migration 0002 wrote to the separate column. If
+            // the parsed state_graph has no mapping but the row column does, splice it in.
+            if (graph.BoardColumnMapping.Count == 0 && !string.IsNullOrWhiteSpace(row.BoardColumnMappingJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(row.BoardColumnMappingJson);
+                    var dict = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { } v)
+                            dict[prop.Name] = v;
+                    }
+                    graph = graph with { BoardColumnMapping = dict };
+                }
+                catch (JsonException) { /* leave the empty mapping in place */ }
+            }
+
             _entries[planTypeId] = (row, graph);
             return (row, graph);
         }

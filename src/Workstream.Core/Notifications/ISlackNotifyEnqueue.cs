@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
@@ -19,6 +20,7 @@ public interface ISlackNotifyEnqueue
         WorkTask task,
         string notificationType,
         RequestContext ctx,
+        IReadOnlyDictionary<string, string>? extraTokens = null,
         CancellationToken ct = default);
 
     Task EnqueueForFindingAsync(

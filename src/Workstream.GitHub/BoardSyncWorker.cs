@@ -9,9 +9,14 @@ namespace Workstream.GitHub;
 
 /// <summary>
 /// Background hosted service that drains <c>board_sync_log</c> (§7.5). One instance per API
-/// replica acquires a Postgres advisory lock so only one drains at a time. Exponential
-/// backoff on failure, capped at 5 attempts before the row is marked <c>failed</c> and a
-/// <c>board_sync_failed</c> event is emitted.
+/// replica. Exponential backoff on failure, capped at 5 attempts before the row is marked
+/// <c>failed</c> and a <c>board_sync_failed</c> event is emitted.
+///
+/// Lazy item creation: the worker treats <c>tasks.github_board_item_id</c> as the source of
+/// truth. If a task has never been synced, the worker calls <c>addProjectV2DraftIssue</c>
+/// first, persists the returned <c>PVTI_…</c> back onto the task row, then updates the
+/// Status field. This means tasks created before a project_board was registered also get
+/// surfaced on the board on their first transition.
 /// </summary>
 public sealed class BoardSyncWorker : BackgroundService
 {
@@ -21,13 +26,14 @@ public sealed class BoardSyncWorker : BackgroundService
 
     private readonly IOutboxRepository _outbox;
     private readonly IProjectRepository _projects;
+    private readonly ITaskRepository _tasks;
     private readonly ProjectsV2Client _gh;
     private readonly ILogger<BoardSyncWorker> _log;
 
     public BoardSyncWorker(IOutboxRepository outbox, IProjectRepository projects,
-        ProjectsV2Client gh, ILogger<BoardSyncWorker> log)
+        ITaskRepository tasks, ProjectsV2Client gh, ILogger<BoardSyncWorker> log)
     {
-        _outbox = outbox; _projects = projects; _gh = gh; _log = log;
+        _outbox = outbox; _projects = projects; _tasks = tasks; _gh = gh; _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,9 +49,7 @@ public sealed class BoardSyncWorker : BackgroundService
                     continue;
                 }
                 foreach (var row in batch)
-                {
                     await ProcessAsync(row, stoppingToken).ConfigureAwait(false);
-                }
             }
             catch (OperationCanceledException) { /* shutdown */ }
             catch (Exception ex)
@@ -71,6 +75,13 @@ public sealed class BoardSyncWorker : BackgroundService
                 await _outbox.MarkBoardSyncResultAsync(row.Id, "failed", "board not found", null, null, ct).ConfigureAwait(false);
                 return;
             }
+            var task = await _tasks.GetAsync(row.TaskId.Value, ct).ConfigureAwait(false);
+            if (task is null)
+            {
+                await _outbox.MarkBoardSyncResultAsync(row.Id, "failed", "task not found", null, null, ct).ConfigureAwait(false);
+                return;
+            }
+
             var optionId = row.TargetColumn switch
             {
                 "backlog"     => board.StatusOptionBacklog,
@@ -80,14 +91,42 @@ public sealed class BoardSyncWorker : BackgroundService
                 "blocked"     => board.StatusOptionBlocked ?? board.StatusOptionBacklog,
                 _             => board.StatusOptionBacklog,
             };
-            // For brand-new tasks the board item id might not exist yet. v1: we assume
-            // the activate_plan path created items; if not, we surface a failed row and let
-            // operators retry. Future: auto-create draft item here.
-            await _gh.UpdateItemStatusFieldAsync(board.GithubProjectV2NodeId,
-                itemNodeId: row.TaskId.ToString()!,    // placeholder: real impl resolves from tasks.github_board_item_id
-                statusFieldNodeId: board.StatusFieldNodeId,
-                optionId: optionId, ct).ConfigureAwait(false);
-            await _outbox.MarkBoardSyncResultAsync(row.Id, "success", null, null, null, ct).ConfigureAwait(false);
+
+            // Lazy create: if the task has no item id yet, create a draft item now and
+            // persist the returned PVTI_ + databaseId before pushing the Status update.
+            // If the task already has a node id but no number (legacy/backfill case), do
+            // a lookup query — the slack adapter needs the number to build the pane URL.
+            var itemId = task.GithubBoardItemId;
+            if (string.IsNullOrEmpty(itemId))
+            {
+                var created = await _gh.CreateDraftItemAsync(
+                    board.GithubProjectV2NodeId,
+                    title: task.Title,
+                    body: task.Description ?? "",
+                    ct).ConfigureAwait(false);
+                itemId = created.NodeId;
+                await _tasks.SetGithubBoardItemIdAsync(task.Id, itemId, created.DatabaseId, ct).ConfigureAwait(false);
+                _log.LogInformation("created draft item {ItemId} ({Number}) for task {TaskId}", itemId, created.DatabaseId, task.Id);
+            }
+            else
+            {
+                var existingNumber = await _tasks.GetGithubBoardItemNumberAsync(task.Id, ct).ConfigureAwait(false);
+                if (existingNumber is null)
+                {
+                    var num = await _gh.LookupItemDatabaseIdAsync(itemId, ct).ConfigureAwait(false);
+                    if (num is not null)
+                    {
+                        await _tasks.SetGithubBoardItemIdAsync(task.Id, itemId, num, ct).ConfigureAwait(false);
+                        _log.LogInformation("backfilled databaseId {Number} for task {TaskId}", num, task.Id);
+                    }
+                }
+            }
+
+            await _gh.UpdateItemStatusFieldAsync(
+                board.GithubProjectV2NodeId, itemId, board.StatusFieldNodeId, optionId, ct)
+                .ConfigureAwait(false);
+
+            await _outbox.MarkBoardSyncResultAsync(row.Id, "success", null, itemId, null, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

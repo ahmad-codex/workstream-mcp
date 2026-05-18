@@ -1,13 +1,16 @@
 using System;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Dapper;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Workstream.Api.Middleware;
 using Workstream.Core.Domain;
+using Workstream.Data;
 using Workstream.Data.Repositories;
+using Workstream.GitHub;
 
 namespace Workstream.Api.Endpoints;
 
@@ -74,6 +77,61 @@ public static class AdminEndpoints
             await users.SetPermissionAsync(existing.Id, req.Permission, req.Value, http.RequestAborted).ConfigureAwait(false);
             return Results.Json(new { ok = true, github_username = username, permission = req.Permission, value = req.Value });
         });
+
+        // Diagnostic helper: list every V2 project the installed App can see on an org.
+        // If discover returns NOT_FOUND, this confirms what numbers are actually visible.
+        grp.MapPost("/boards/list", async (DiscoverBoardRequest req, ProjectsV2Client gh, HttpContext http) =>
+        {
+            try
+            {
+                var rows = await gh.ListOrgProjectsAsync(req.Org, http.RequestAborted).ConfigureAwait(false);
+                return Results.Json(new { projects = rows });
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
+            }
+        });
+
+        // GitHub Projects V2 discovery — one-shot, given org login + project number, queries
+        // GraphQL with the installed App's token and returns every node id needed to register
+        // the board (project id, status field id, status option ids). Saves the operator from
+        // having to construct a GraphQL query by hand.
+        grp.MapPost("/boards/discover", async (DiscoverBoardRequest req, ProjectsV2Client gh, HttpContext http) =>
+        {
+            try
+            {
+                var result = await gh.DiscoverOrgBoardAsync(req.Org, req.ProjectNumber, http.RequestAborted)
+                    .ConfigureAwait(false);
+                return Results.Json(new
+                {
+                    project_node_id     = result.ProjectNodeId,
+                    project_number      = result.ProjectNumber,
+                    title               = result.Title,
+                    status_field_node_id = result.StatusFieldNodeId,
+                    status_options      = result.StatusOptions,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
+            }
+        });
+
+        // Bind an already-registered board to a plan. Just sets plans.primary_board_id;
+        // exists because there's no MCP tool for this yet and updating the column manually
+        // is friction.
+        grp.MapPost("/plans/{planId:guid}/board", async (Guid planId, BindBoardRequest req, IDbConnectionFactory factory, HttpContext http) =>
+        {
+            await using var conn = await factory.OpenAsync(http.RequestAborted).ConfigureAwait(false);
+            var n = await conn.ExecuteAsync(new CommandDefinition(
+                "UPDATE plans SET primary_board_id = @boardId WHERE id = @planId",
+                new { planId, boardId = req.BoardId }, cancellationToken: http.RequestAborted))
+                .ConfigureAwait(false);
+            return n == 0
+                ? Results.NotFound(new { error = "plan not found" })
+                : Results.Json(new { ok = true, plan_id = planId, board_id = req.BoardId });
+        });
     }
 
     /// <summary>32 bytes (256 bits) of CSPRNG, URL-safe base64, no padding (§3.1).</summary>
@@ -87,3 +145,5 @@ public static class AdminEndpoints
 
 public sealed record CreateUserRequest(string GithubUsername, string? DisplayName, string? ActorType, bool? IsAdmin);
 public sealed record GrantRequest(string Permission, bool Value);
+public sealed record DiscoverBoardRequest(string Org, int ProjectNumber);
+public sealed record BindBoardRequest(Guid BoardId);

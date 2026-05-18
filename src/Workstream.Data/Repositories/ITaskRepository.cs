@@ -82,6 +82,18 @@ public interface ITaskRepository
     /// Returns the number of rows swept.
     /// </summary>
     Task<int> SweepExpiredClaimsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Persist the GitHub Projects V2 item node id (<c>PVTI_…</c>) and its numeric
+    /// databaseId for a task. Called by the board-sync worker the first time it
+    /// processes a task that doesn't yet have them (lazy create on first transition).
+    /// The number is optional because some legacy rows may only have the node id;
+    /// the worker backfills it on the next sync.
+    /// </summary>
+    Task SetGithubBoardItemIdAsync(Guid taskId, string boardItemId, long? boardItemNumber, CancellationToken ct = default);
+
+    /// <summary>Return the numeric databaseId previously stored for this task, or null.</summary>
+    Task<long?> GetGithubBoardItemNumberAsync(Guid taskId, CancellationToken ct = default);
 }
 
 public sealed record WorkTaskInsert(

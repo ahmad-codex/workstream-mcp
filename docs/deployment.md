@@ -71,6 +71,10 @@ Set `WORKSTREAM_OTEL_ENDPOINT=https://otel-collector:4317` in the environment to
 
 Per-project setup walkthrough (Slack app creation, scopes, channel invite, token-into-repo, MCP registration, verification) in [`slack-setup.md`](./slack-setup.md).
 
+## GitHub Projects V2 board
+
+Per-project board wiring (App creation under your org, permissions, install + IDs, board discover, plan binding, end-to-end test) in [`github-setup.md`](./github-setup.md).
+
 ## Backups
 
 `pg_dump` from a cron on the host, nightly, to a separate volume. Weekly off-host copy. The `events` table is part of the dump and durability matters as much as the primary state.

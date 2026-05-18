@@ -1,16 +1,25 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Workstream.Core.Domain;
 using Workstream.Data.Repositories;
 
 namespace Workstream.Slack;
 
 /// <summary>
 /// Background hosted service that drains <c>slack_notify_log</c> (§8.3). One per API replica.
-/// On success, persists <c>slack_ts</c> back to the row so subsequent notifications on the
-/// same entity reply in the same Slack thread (§8.4).
+/// On success, persists <c>slack_ts</c> back to the row.
+///
+/// Re-link enrichment: when an MCP request enqueues a task notification, it composes the
+/// body before the board-sync worker has had a chance to create the GitHub draft item
+/// (lazy create lives in <c>BoardSyncWorker</c>). The first body therefore contains the
+/// board-page URL (not the per-item pane URL). Before posting, we re-read the task and
+/// rewrite any <c>&lt;boardUrl|title&gt;</c> link in the body to the pane URL if a
+/// <c>github_board_item_number</c> is now available. This keeps the first-post race-free
+/// without putting GitHub API calls inside the request transaction.
 /// </summary>
 public sealed class SlackNotifyWorker : BackgroundService
 {
@@ -20,14 +29,18 @@ public sealed class SlackNotifyWorker : BackgroundService
 
     private readonly IOutboxRepository _outbox;
     private readonly IProjectRepository _projects;
+    private readonly IPlanRepository _plans;
+    private readonly ITaskRepository _tasks;
     private readonly SlackClient _slack;
     private readonly ISlackBotTokenResolver _tokens;
     private readonly ILogger<SlackNotifyWorker> _log;
 
     public SlackNotifyWorker(IOutboxRepository outbox, IProjectRepository projects,
+        IPlanRepository plans, ITaskRepository tasks,
         SlackClient slack, ISlackBotTokenResolver tokens, ILogger<SlackNotifyWorker> log)
     {
-        _outbox = outbox; _projects = projects; _slack = slack; _tokens = tokens; _log = log;
+        _outbox = outbox; _projects = projects; _plans = plans; _tasks = tasks;
+        _slack = slack; _tokens = tokens; _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -69,8 +82,22 @@ public sealed class SlackNotifyWorker : BackgroundService
                 await _outbox.MarkSlackResultAsync(row.Id, "failed", "no slack config for project", null, null, ct).ConfigureAwait(false);
                 return;
             }
+
+            // If this is a task notification and the plan is bound to a board but the
+            // task doesn't have its github_board_item_number persisted yet, the board
+            // sync worker hasn't finished creating the draft item. Defer this post
+            // briefly so the next dequeue can build the deep-link URL. Cap at a few
+            // retries so a perma-failing board sync doesn't block the slack post.
+            if (await ShouldWaitForBoardItemAsync(row, ct).ConfigureAwait(false))
+            {
+                await _outbox.MarkSlackResultAsync(row.Id, "retry", null, null, TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                return;
+            }
+
+            var body = await UpgradeBoardLinkToItemLinkAsync(row, ct).ConfigureAwait(false);
+
             var token = await _tokens.ResolveAsync(slackCfg.BotTokenSecretRef, ct).ConfigureAwait(false);
-            var result = await _slack.PostMessageAsync(token, row.ChannelId, row.Body, row.ThreadTs, ct).ConfigureAwait(false);
+            var result = await _slack.PostMessageAsync(token, row.ChannelId, body, row.ThreadTs, ct).ConfigureAwait(false);
             if (!result.Ok)
             {
                 throw new InvalidOperationException($"slack rejected post: {result.Error}");
@@ -91,5 +118,50 @@ public sealed class SlackNotifyWorker : BackgroundService
                 await _outbox.MarkSlackResultAsync(row.Id, "retry", ex.Message, null, delay, ct).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// True when the row should be deferred because the board worker hasn't yet
+    /// persisted <c>github_board_item_number</c> for this task. After a handful of
+    /// retries we give up and post the body as-is (board-page URL instead of pane URL).
+    /// </summary>
+    private async Task<bool> ShouldWaitForBoardItemAsync(SlackNotifyRow row, CancellationToken ct)
+    {
+        if (row.EntityType != EntityType.Task) return false;
+        if (row.PlanId is null) return false;
+        if (row.Attempts >= 4) return false;   // ~9-12s total wait, then give up
+
+        var plan = await _plans.GetAsync(row.PlanId.Value, ct).ConfigureAwait(false);
+        if (plan?.PrimaryBoardId is null) return false;
+
+        var num = await _tasks.GetGithubBoardItemNumberAsync(row.EntityId, ct).ConfigureAwait(false);
+        return num is null;
+    }
+
+    /// <summary>
+    /// If the body contains a board-page link for a task whose item id is now known,
+    /// rewrite the link to the project's side-pane URL. Returns the body unchanged when
+    /// there's no upgrade to do.
+    /// </summary>
+    private async Task<string> UpgradeBoardLinkToItemLinkAsync(SlackNotifyRow row, CancellationToken ct)
+    {
+        if (row.EntityType != EntityType.Task) return row.Body;
+        if (row.PlanId is null) return row.Body;
+
+        var plan = await _plans.GetAsync(row.PlanId.Value, ct).ConfigureAwait(false);
+        if (plan?.PrimaryBoardId is not { } boardId) return row.Body;
+
+        var board = await _projects.GetBoardAsync(boardId, ct).ConfigureAwait(false);
+        if (board is null) return row.Body;
+
+        var num = await _tasks.GetGithubBoardItemNumberAsync(row.EntityId, ct).ConfigureAwait(false);
+        if (num is null) return row.Body;
+
+        var boardUrl = $"https://github.com/orgs/{board.GithubOwner}/projects/{board.GithubProjectNumber}";
+        // Avoid matching links that already point at /views/...?pane=... by anchoring the
+        // boardUrl with a closing pipe right after — i.e., only the bare board-page form.
+        var pattern = $"<{Regex.Escape(boardUrl)}\\|([^>]+)>";
+        var paneUrl = $"{boardUrl}/views/1?pane=issue&itemId={num}";
+        return Regex.Replace(row.Body, pattern, m => $"<{paneUrl}|{m.Groups[1].Value}>");
     }
 }
