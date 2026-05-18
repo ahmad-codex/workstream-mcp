@@ -80,11 +80,16 @@ services:
       - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 
 secrets:
-  pg_password:        { file: ./secrets/pg_password }
-  admin_token:        { file: ./secrets/admin_token }
-  gh_app_key:         { file: ./secrets/gh_app_key.pem }
-  gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
-  slack_demo:         { file: ./secrets/slack-demo }
+  # Mode 0444 — the api container runs as the non-root `workstream` user (see
+  # Dockerfile.api). Without an explicit mode Docker mounts secrets as root:root
+  # 0400, which the workstream user can't read. World-readable is fine here:
+  # the container filesystem is isolated and the secrets only live there at
+  # runtime.
+  pg_password:        { file: ./secrets/pg_password,       mode: 0444 }
+  admin_token:        { file: ./secrets/admin_token,       mode: 0444 }
+  gh_app_key:         { file: ./secrets/gh_app_key.pem,    mode: 0444 }
+  gh_webhook_secret:  { file: ./secrets/gh_webhook_secret, mode: 0444 }
+  slack_demo:         { file: ./secrets/slack-demo,        mode: 0444 }
 
 volumes:
   workstream-pg-data:
