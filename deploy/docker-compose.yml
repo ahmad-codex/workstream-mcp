@@ -58,7 +58,11 @@ services:
       #   * Maximum Pool Size kept modest (10) — the real connection pool is pgbouncer's
       #   * No Reset On Close=true — pgbouncer's server_reset_query handles state cleanup
       #   * Max Auto Prepare=0 — defaults already, but explicit guards against accidental flip
-      WORKSTREAM_DB_CONNECTION: "Host=pgbouncer;Port=6432;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=10;Pooling=true;No Reset On Close=true;Max Auto Prepare=0"
+      # Server Compatibility Mode=NoTypeLoading — pgbouncer transaction-pool mode
+      # confuses Npgsql's type-catalog query (manifests as "Reading as 'System.Object'
+      # not supported for fields having DataTypeName '-'" after a postgres restart).
+      # NoTypeLoading skips that catalog query at startup.
+      WORKSTREAM_DB_CONNECTION: "Host=pgbouncer;Port=6432;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=10;Pooling=true;No Reset On Close=true;Max Auto Prepare=0;Server Compatibility Mode=NoTypeLoading"
       WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
       WORKSTREAM_ADMIN_TOKEN_FILE: /run/secrets/admin_token
       WORKSTREAM_GH_APP_ID: ${WORKSTREAM_GH_APP_ID:-0}
@@ -73,7 +77,7 @@ services:
       - gh_webhook_secret
       - slack_demo
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 
 secrets:
   pg_password:        { file: ./secrets/pg_password }

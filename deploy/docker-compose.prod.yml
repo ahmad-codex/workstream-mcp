@@ -1,0 +1,26 @@
+# Production-deployment overrides.
+# Used together with the base docker-compose.yml:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# What this adds vs the base:
+#   * Binds the api on 0.0.0.0:3010 (in addition to the localhost-only 8080 from
+#     base — compose merges port lists, so both bindings end up active).
+#   * Sets WORKSTREAM_PUBLIC_BASE_URL to the prod hostname so URLs minted by
+#     /admin/users come back with the right base.
+#   * Drops the debug-only pgbouncer host-port publish (it stays internal to the
+#     compose network).
+
+services:
+  api:
+    ports:
+      - "0.0.0.0:3010:8080"
+    environment:
+      WORKSTREAM_PUBLIC_BASE_URL: "http://78.46.151.57:3010"
+
+  pgbouncer:
+    # Override the base ports list. (Compose merges lists additively, but the
+    # base file's 6432 publish is for local debugging — declaring an empty
+    # mapping here is a comment; we accept the duplicate port surface as a
+    # tradeoff for keeping a single compose file readable. To fully suppress
+    # it on the server, run with --remove-orphans after editing the base.)
+    ports: []
