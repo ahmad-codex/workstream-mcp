@@ -4,10 +4,10 @@
   "requires_findings": true,
   "retry_cap": 3,
   "role_ttls": {
-    "auditor": "30m",
-    "verifier": "15m",
-    "fixer": "45m",
-    "fix_verifier": "15m"
+    "auditor": "120m",
+    "verifier": "120m",
+    "fixer": "120m",
+    "fix_verifier": "120m"
   },
   "roles": {
     "auditor":      { "primary_execution": true,  "is_reviewer": false },

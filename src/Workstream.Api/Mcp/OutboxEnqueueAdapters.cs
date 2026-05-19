@@ -103,16 +103,22 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         }, ct).ConfigureAwait(false);
     }
 
-    public async Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, Finding finding, Guid taskId, string notificationType, RequestContext ctx, CancellationToken ct = default)
+    public async Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, Finding finding, Guid taskId, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
-        var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
+        // Base tokens are derived from the finding; caller-supplied extras (e.g. {reason})
+        // overlay on top so override_verdict and submit_verification_verdict can both surface
+        // a human-supplied explanation in the channel post.
+        var tokens = new Dictionary<string, string>
         {
             ["actor"]       = ctx.DisplayActor,
             ["finding_key"] = finding.ExternalKey,
             ["severity"]    = finding.Severity ?? "unknown",
-        });
+        };
+        if (extraTokens is not null)
+            foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
+        var body = FormatTemplate(pt.Row, notificationType, tokens);
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,

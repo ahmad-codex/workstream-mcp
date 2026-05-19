@@ -267,6 +267,95 @@ public sealed class ClaimNextAttemptForReviewTool : McpTool<ClaimFindingInput, N
 }
 
 // ============================================================================
+// refresh_claim
+// ============================================================================
+
+public sealed record RefreshClaimInput(Guid ClaimToken, string? ExtendBy = null);
+public sealed record RefreshClaimOutput(string EntityType, Guid EntityId, DateTimeOffset ClaimedUntil);
+
+public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOutput>
+{
+    private readonly ITaskRepository _tasks;
+    private readonly IFindingRepository _findings;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+
+    public RefreshClaimTool(
+        ITaskRepository tasks,
+        IFindingRepository findings,
+        IPlanRepository plans,
+        Workstream.Core.StateMachine.IPlanTypeCache planTypes)
+    {
+        _tasks = tasks; _findings = findings; _plans = plans; _planTypes = planTypes;
+    }
+
+    public override string Name => "refresh_claim";
+    public override string Description =>
+        "Extend an active claim's TTL without releasing it. Use when a subagent's reproduction is " +
+        "taking longer than the configured role TTL (e.g. a Hetzner-routed verifier mid-deploy). " +
+        "extend_by accepts the same duration shorthand as the role_ttls config ('30m', '2h'); if " +
+        "omitted, the role's configured TTL is added on top of the current claimed_until. The token " +
+        "must still be live AND held by the calling actor — an already-expired claim cannot be " +
+        "reanimated here (it must release and re-claim), because the stuck-work sweeper may have " +
+        "already handed the row to someone else. Writes a claim_refreshed event so the audit trail " +
+        "shows every extension.";
+
+    protected override async Task<RefreshClaimOutput> RunAsync(RefreshClaimInput input, RequestContext ctx, CancellationToken ct)
+    {
+        // Resolve the requested extension before touching the DB so the same parsing path
+        // serves both task and finding routes below.
+        TimeSpan? requested = input.ExtendBy is null ? null : ClaimHelpers.ParseDuration(input.ExtendBy);
+
+        // Try the task path first. It's the common case and the lookup is cheap.
+        var task = await _tasks.GetByClaimTokenAsync(input.ClaimToken, ct).ConfigureAwait(false);
+        if (task is not null)
+        {
+            var ttl = requested ?? await ResolveTtlForTaskAsync(task, ct).ConfigureAwait(false);
+            var updated = await _tasks.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct).ConfigureAwait(false)
+                          ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
+            return new RefreshClaimOutput(EntityType.Task, updated.Id,
+                updated.Claim.ClaimedUntil ?? DateTimeOffset.UtcNow.Add(ttl));
+        }
+
+        // Fall through to the finding path. Same liveness gate, same actor check.
+        var finding = await _findings.GetByClaimTokenAsync(input.ClaimToken, ct).ConfigureAwait(false);
+        if (finding is not null)
+        {
+            var ttl = requested ?? await ResolveTtlForFindingAsync(finding, ct).ConfigureAwait(false);
+            var updated = await _findings.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct).ConfigureAwait(false)
+                          ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
+            return new RefreshClaimOutput(EntityType.Finding, updated.Id,
+                updated.Claim.ClaimedUntil ?? DateTimeOffset.UtcNow.Add(ttl));
+        }
+
+        throw new WorkstreamException(WorkstreamError.StaleClaim());
+    }
+
+    private async Task<TimeSpan> ResolveTtlForTaskAsync(WorkTask task, CancellationToken ct)
+    {
+        var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
+        if (plan is null) return TimeSpan.FromMinutes(30);
+        var ptOpt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+        if (ptOpt is null) return TimeSpan.FromMinutes(30);
+        var role = task.Claim.Role ?? "";
+        return ClaimHelpers.ResolveTtl(ptOpt.Value.Row.RoleTtlsJson, role, requested: null);
+    }
+
+    private async Task<TimeSpan> ResolveTtlForFindingAsync(Finding finding, CancellationToken ct)
+    {
+        // Findings don't carry plan_id directly; resolve through the parent task.
+        var task = await _tasks.GetAsync(finding.TaskId, ct).ConfigureAwait(false);
+        if (task is null) return TimeSpan.FromMinutes(30);
+        var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
+        if (plan is null) return TimeSpan.FromMinutes(30);
+        var ptOpt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+        if (ptOpt is null) return TimeSpan.FromMinutes(30);
+        var role = finding.Claim.Role ?? "";
+        return ClaimHelpers.ResolveTtl(ptOpt.Value.Row.RoleTtlsJson, role, requested: null);
+    }
+}
+
+// ============================================================================
 // release_claim
 // ============================================================================
 

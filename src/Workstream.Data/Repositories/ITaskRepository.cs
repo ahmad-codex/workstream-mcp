@@ -15,6 +15,13 @@ public interface ITaskRepository
 {
     Task<WorkTask?> GetAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Look up a task by its current claim token. Returns null if no row matches. Used by
+    /// <c>refresh_claim</c> to dispatch to the right repository without the caller having
+    /// to know which entity the token belongs to.
+    /// </summary>
+    Task<WorkTask?> GetByClaimTokenAsync(Guid claimToken, CancellationToken ct = default);
+
     Task<IReadOnlyList<WorkTask>> ListByPlanAsync(Guid planId, CancellationToken ct = default);
 
     Task<WorkTask> InsertAsync(WorkTaskInsert input, CancellationToken ct = default);
@@ -50,6 +57,18 @@ public interface ITaskRepository
         Guid actorId,
         string? reason,
         bool resetStatusToPending,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Extend an active claim's TTL. Returns the updated row with the new claimed_until,
+    /// or null if the claim token is unknown or already expired (the caller surfaces
+    /// <c>stale_claim</c> in either case so an expired claim can't be reanimated — the
+    /// stuck-work sweeper owns that transition). Writes a <c>claim_refreshed</c> event.
+    /// </summary>
+    Task<WorkTask?> RefreshClaimAsync(
+        Guid claimToken,
+        Guid actorId,
+        TimeSpan extendBy,
         CancellationToken ct = default);
 
     /// <summary>

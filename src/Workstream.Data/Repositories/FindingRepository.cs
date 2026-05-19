@@ -45,6 +45,14 @@ public sealed class FindingRepository : IFindingRepository
         return row?.ToDomain();
     }
 
+    public async Task<Finding?> GetByClaimTokenAsync(Guid claimToken, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        var sql = $"SELECT {Columns} FROM findings WHERE claim_token = @claimToken LIMIT 1";
+        var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql, new { claimToken }, cancellationToken: ct)).ConfigureAwait(false);
+        return row?.ToDomain();
+    }
+
     public async Task<IReadOnlyList<Finding>> ListByTaskAsync(Guid taskId, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
@@ -230,6 +238,77 @@ public sealed class FindingRepository : IFindingRepository
             VALUES (@actorId, 'finding', @id, @eventType, @fromState, @toState, COALESCE(@payload::jsonb, '{}'::jsonb))
             """,
             new { actorId, id = row.Id, eventType, fromState = row.Status, toState = newStatus, payload = eventPayloadJson },
+            tx, cancellationToken: ct)).ConfigureAwait(false);
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
+        return updated.ToDomain();
+    }
+
+    public async Task<Finding?> RefreshClaimAsync(
+        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // Same liveness gate as the task path: must match token + holding actor + still
+        // be live. Expired claims fall through to release_claim + re-claim.
+        var sql = $"""
+            UPDATE findings
+            SET claimed_until = now() + (@extendSeconds || ' seconds')::interval
+            WHERE claim_token   = @claimToken
+              AND claim_actor_id = @actorId
+              AND claimed_until > now()
+            RETURNING {Columns}
+            """;
+        var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql,
+            new { claimToken, actorId, extendSeconds = (int)extendBy.TotalSeconds }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
+        if (row is null)
+        {
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            return null;
+        }
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
+            VALUES (@actorId, 'finding', @id, 'claim_refreshed',
+                    jsonb_build_object('extend_seconds', @extendSeconds, 'claimed_until', @until))
+            """, new { actorId, id = row.Id, extendSeconds = (int)extendBy.TotalSeconds, until = row.ClaimedUntil }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
+        await tx.CommitAsync(ct).ConfigureAwait(false);
+        return row.ToDomain();
+    }
+
+    public async Task<Finding?> OverrideStatusAsync(
+        Guid findingId, Guid actorId, string newStatus, string reason, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        var lockSql = $"SELECT {Columns} FROM findings WHERE id = @findingId FOR UPDATE";
+        var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(lockSql,
+            new { findingId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (row is null)
+        {
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            return null;
+        }
+
+        var updateSql = $"""
+            UPDATE findings
+            SET status = @newStatus,
+                claim_actor_id = NULL, claim_role = NULL, claim_token = NULL,
+                claimed_at = NULL, claimed_until = NULL
+            WHERE id = @findingId
+            RETURNING {Columns}
+            """;
+        var updated = await conn.QuerySingleAsync<Row>(new CommandDefinition(updateSql,
+            new { newStatus, findingId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO events (actor_id, entity_type, entity_id, event_type, from_state, to_state, payload)
+            VALUES (@actorId, 'finding', @findingId, 'override', @fromState, @toState, jsonb_build_object('reason', @reason))
+            """,
+            new { actorId, findingId, fromState = row.Status, toState = newStatus, reason },
             tx, cancellationToken: ct)).ConfigureAwait(false);
 
         await tx.CommitAsync(ct).ConfigureAwait(false);

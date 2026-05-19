@@ -24,6 +24,7 @@ public static class McpToolRegistration
         services.AddSingleton<IMcpTool, Tools.Claims.ClaimNextFindingForFixTool>();
         services.AddSingleton<IMcpTool, Tools.Claims.ClaimNextAttemptForReviewTool>();
         services.AddSingleton<IMcpTool, Tools.Claims.ReleaseClaimTool>();
+        services.AddSingleton<IMcpTool, Tools.Claims.RefreshClaimTool>();
 
         // Submission
         services.AddSingleton<IMcpTool, Tools.Submission.StartWorkTool>();

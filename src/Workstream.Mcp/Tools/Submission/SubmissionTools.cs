@@ -690,8 +690,9 @@ internal static class NotificationHelpers
         Guid taskId,
         string notificationType,
         RequestContext ctx,
-        CancellationToken ct)
+        CancellationToken ct,
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null)
     {
-        await slack.EnqueueForFindingAsync(plan, pt, finding, taskId, notificationType, ctx, ct).ConfigureAwait(false);
+        await slack.EnqueueForFindingAsync(plan, pt, finding, taskId, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
 }

@@ -351,6 +351,7 @@ public sealed record OverrideVerdictOutput(string EntityType, Guid EntityId, str
 public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, OverrideVerdictOutput>
 {
     private readonly ITaskRepository _tasks;
+    private readonly IFindingRepository _findings;
     private readonly IPlanRepository _plans;
     private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
     private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
@@ -358,36 +359,54 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
 
     public OverrideVerdictTool(
         ITaskRepository tasks,
+        IFindingRepository findings,
         IPlanRepository plans,
         Workstream.Core.StateMachine.IPlanTypeCache planTypes,
         Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
         Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
     {
-        _tasks = tasks; _plans = plans; _planTypes = planTypes;
+        _tasks = tasks; _findings = findings; _plans = plans; _planTypes = planTypes;
         _board = board; _slack = slack;
     }
 
     public override string Name => "override_verdict";
     public override string Description =>
-        "Force a state change on a task without holding its claim. Requires can_override_verdict on " +
-        "the calling actor. Writes an override event with the supplied reason, and fires board + Slack " +
-        "so the bound Project V2 card and the channel reflect the new status. The only legal way to " +
-        "mutate a row without holding its claim.";
+        "Force a state change on a task or finding without holding its claim. Requires " +
+        "can_override_verdict on the calling actor. Writes an override event with the supplied " +
+        "reason, and (for tasks) fires board + Slack so the bound Project V2 card and the channel " +
+        "reflect the new status. Use when a subagent's claim has gone stale but the work it " +
+        "produced needs to be recorded (e.g. a verifier that finished after its TTL expired). " +
+        "For attempts, use record_commit to attach commit metadata; an attempt has no status of " +
+        "its own — the parent finding carries the verdict, so override the finding instead.";
 
     protected override async Task<OverrideVerdictOutput> RunAsync(OverrideVerdictInput input, RequestContext ctx, CancellationToken ct)
     {
         if (!ctx.CanOverrideVerdict)
             throw new WorkstreamException(WorkstreamError.PermissionDenied("can_override_verdict"));
 
-        if (input.EntityType != EntityType.Task)
-            throw new WorkstreamException(WorkstreamError.Validation("override_verdict supports task entities in v1"));
+        return input.EntityType switch
+        {
+            EntityType.Task     => await OverrideTaskAsync(input, ctx, ct).ConfigureAwait(false),
+            EntityType.Finding  => await OverrideFindingAsync(input, ctx, ct).ConfigureAwait(false),
+            EntityType.Attempt  => throw new WorkstreamException(WorkstreamError.Validation(
+                "override_verdict does not apply to attempts directly — an attempt has no status of " +
+                "its own. To record commit metadata on an attempt that bypassed the normal flow, use " +
+                "record_commit. To force a finding-level verdict (fixed / fix_failed / partial / " +
+                "needs_human_review) when the fix-verifier's claim went stale, call override_verdict " +
+                "on the parent finding with the desired status.")),
+            _ => throw new WorkstreamException(WorkstreamError.Validation(
+                $"override_verdict only accepts entity_type in {{task, finding}}; got '{input.EntityType}'")),
+        };
+    }
 
+    private async Task<OverrideVerdictOutput> OverrideTaskAsync(OverrideVerdictInput input, RequestContext ctx, CancellationToken ct)
+    {
         var updated = await _tasks.OverrideStatusAsync(input.EntityId, ctx.ActorId, input.NewStatus, input.Reason, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.NotFound("task"));
 
         // Resolve a Slack notification type from the new status. The board sync uses the
         // board-column mapping for the actual column flip.
-        var slackType = MapStatusToNotificationType(updated.Status);
+        var slackType = MapTaskStatusToNotificationType(updated.Status);
         var plan = await _plans.GetAsync(updated.PlanId, ct).ConfigureAwait(false);
         if (plan is not null)
         {
@@ -404,7 +423,42 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
         return new OverrideVerdictOutput(EntityType.Task, updated.Id, updated.Status);
     }
 
-    private static string MapStatusToNotificationType(string status) => status switch
+    private async Task<OverrideVerdictOutput> OverrideFindingAsync(OverrideVerdictInput input, RequestContext ctx, CancellationToken ct)
+    {
+        var updated = await _findings.OverrideStatusAsync(input.EntityId, ctx.ActorId, input.NewStatus, input.Reason, ct).ConfigureAwait(false)
+                      ?? throw new WorkstreamException(WorkstreamError.NotFound("finding"));
+
+        // Findings don't sync to a board card directly — the parent task already shows on
+        // the board. We DO post Slack for findings because operators care about confirmed /
+        // rejected / fixed transitions, especially when they happen via override (which means
+        // a human is recovering from a stuck-claim or escalating a stale verifier result).
+        var task = await _tasks.GetAsync(updated.TaskId, ct).ConfigureAwait(false);
+        if (task is not null)
+        {
+            var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
+            if (plan is not null)
+            {
+                var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+                if (pt is not null)
+                {
+                    var slackType = MapFindingStatusToNotificationType(updated.Status);
+                    var extras = new Dictionary<string, string>
+                    {
+                        ["reason"] = input.Reason,
+                        ["finding_key"] = updated.ExternalKey,
+                        ["severity"] = updated.Severity ?? "unknown",
+                    };
+                    await Workstream.Mcp.Tools.Submission.NotificationHelpers
+                        .EnqueueFindingSlackAsync(_slack, _plans, plan, pt.Value, updated, updated.TaskId, slackType, ctx, ct, extras)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+
+        return new OverrideVerdictOutput(EntityType.Finding, updated.Id, updated.Status);
+    }
+
+    private static string MapTaskStatusToNotificationType(string status) => status switch
     {
         TaskStatus.InProgress       => "task.in_progress",
         TaskStatus.Review           => "task.review",
@@ -412,5 +466,15 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
         TaskStatus.Pending          => "task.created",
         TaskStatus.Claimed          => "task.claimed",
         _                           => "task.blocked",   // deferred / blocked / skipped / out_of_scope / needs_human_review
+    };
+
+    private static string MapFindingStatusToNotificationType(string status) => status switch
+    {
+        "confirmed"           => "finding.confirmed",
+        "rejected"            => "finding.rejected",
+        "fixed"               => "fix.confirmed",
+        "fix_failed"          => "fix.failed",
+        "needs_human_review"  => "finding.rejected",   // closest template; reason carries the detail
+        _                     => "finding.confirmed",
     };
 }

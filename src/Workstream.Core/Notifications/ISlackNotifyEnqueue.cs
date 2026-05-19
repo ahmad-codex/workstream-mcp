@@ -30,6 +30,7 @@ public interface ISlackNotifyEnqueue
         Guid taskId,
         string notificationType,
         RequestContext ctx,
+        IReadOnlyDictionary<string, string>? extraTokens = null,
         CancellationToken ct = default);
 
     Task EnqueueForPlanAsync(

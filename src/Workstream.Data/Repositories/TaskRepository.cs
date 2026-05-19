@@ -54,6 +54,12 @@ public sealed class TaskRepository : ITaskRepository
         return await ReadOneAsync(conn, "WHERE id = @id LIMIT 1", new { id }, ct).ConfigureAwait(false);
     }
 
+    public async Task<WorkTask?> GetByClaimTokenAsync(Guid claimToken, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await ReadOneAsync(conn, "WHERE claim_token = @claimToken LIMIT 1", new { claimToken }, ct).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<WorkTask>> ListByPlanAsync(Guid planId, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
@@ -325,6 +331,43 @@ public sealed class TaskRepository : ITaskRepository
             INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
             VALUES (@actorId, 'task', @taskId, 'released', jsonb_build_object('reason', @reason))
             """, new { actorId, taskId = row.Id, reason }, cancellationToken: ct)).ConfigureAwait(false);
+        return row.ToDomain();
+    }
+
+    public async Task<WorkTask?> RefreshClaimAsync(
+        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // Match the claim token, the holding actor (so a different actor can't extend
+        // someone else's claim), and require the existing claim to still be live
+        // (claimed_until > now()). An already-expired claim is NOT eligible — it must
+        // go through release_claim and re-claim, otherwise an agent that lost the race
+        // to the sweeper could revive a row that another claimer has since taken.
+        var sql = $"""
+            UPDATE tasks
+            SET claimed_until = now() + (@extendSeconds || ' seconds')::interval
+            WHERE claim_token   = @claimToken
+              AND claim_actor_id = @actorId
+              AND claimed_until > now()
+            RETURNING {TaskColumns};
+            """;
+        var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
+            new { claimToken, actorId, extendSeconds = (int)extendBy.TotalSeconds }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
+        if (row is null)
+        {
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            return null;
+        }
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
+            VALUES (@actorId, 'task', @taskId, 'claim_refreshed',
+                    jsonb_build_object('extend_seconds', @extendSeconds, 'claimed_until', @until))
+            """, new { actorId, taskId = row.Id, extendSeconds = (int)extendBy.TotalSeconds, until = row.ClaimedUntil }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
+        await tx.CommitAsync(ct).ConfigureAwait(false);
         return row.ToDomain();
     }
 
