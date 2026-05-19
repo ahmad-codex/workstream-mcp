@@ -192,6 +192,7 @@ If a test passes without these conditions met, it does not count and the feature
 - The compression invariants always win over closing a finding. FIX REFUSED on the invariant gate is correct behavior.
 - Every state transition goes through workstream MCP. Do not write a parallel ledger. Do not paste status into chat as the primary record. The workstream events table is the audit trail; rely on it.
 - Worktree hygiene: every task gets its own worktree, every worktree is named `crbrl-audit-<external_key>` on branch `audit/<external_key>`, every worktree is removed when its task closes. Stale worktrees block parallel dispatch on the same paths.
+- Long-running subagents: if a verifier or fix-verifier is mid-Hetzner work and the role TTL is about to elapse, the orchestrator calls `refresh_claim { claim_token, extend_by: "4h" }` from the parent context before the TTL trips. Rule of thumb: refresh when the subagent has been running > 75% of its role TTL and the next step is a container rebuild or a multi-stage Hetzner deploy. Default to a generous extension; the stuck-work sweeper still owns truly abandoned claims via the 2× TTL gate.
 
 ## ASSUMPTIONS FOR THIS PHASE
 
@@ -208,10 +209,13 @@ What's wired (use directly):
 - **Claim gating** — `claim_next_task` skips blocked tasks (SQL `NOT EXISTS` against non-terminal predecessors); `claim_specific_task` returns the structured `dependencies_unmet` error with `details.unmet_dependencies = [task_id, ...]` so the orchestrator can branch on the blocker list.
 - **Dashboard visibility** — `get_plan_dashboard.nextClaimable` is filtered by the same gate as the claim SQL; a new `blocked` field lists pending tasks with their blocker ids so "what's holding the plan back" is one call away.
 - **Markdown export** — `export_plan { format: "markdown" }` appends `— depends on: T-001, T-002` per task; the snapshot reflects the dependency graph for archival.
+- **Claim refresh via `refresh_claim`** — extend an active claim's TTL on a task or finding without releasing it. Default extension is the role's configured TTL; pass `extend_by: "30m"` / `"2h"` to override. Token must still be live AND held by the caller; an already-expired claim must release and re-claim (the stuck-work sweeper may have handed the row to someone else). Every extension writes a `claim_refreshed` event. Use this when a verifier or fixer subagent is mid-Hetzner-deploy and the role TTL is about to elapse. With the current audit profile TTLs (auditor / verifier / fixer / fix_verifier all 120m) most reproductions finish in one window, but a long invariant-check pass can still cross the line.
+- **Override on findings via `override_verdict`** — `override_verdict { entity_type: "finding", entity_id, new_status, reason }` forces a finding's status with a recorded `override` event. Use when a verifier's claim went stale before it could record a verdict (the work was real, just the token expired) or when a human is escalating to `needs_human_review`. Attempt rows do not carry status of their own — to record commit metadata on an attempt that bypassed the normal flow use `record_commit`; to force a fix-verdict (fixed / fix_failed / partial) when the fix-verifier's claim went stale, call `override_verdict` on the parent finding with the desired status.
 
 Remaining gaps (use the workaround until each lands):
 1. **Per-finding worktree pointer on attempts** — `submit_attempt`'s `diff_ref` carries the worktree branch name (e.g. `wt:audit/<external_key>`); the fix-verifier resolves the diff from git, not from a structured field. Workaround is the convention itself.
 2. **Explicit attempt claim queue** — `claim_next_attempt_for_review` is stubbed in v1; the orchestrator passes attempt ids directly to the fix-verifier subagent from its own state, which is consistent with the workstream design but worth re-checking when the queue lands.
+3. **`release_claim` on findings** — the release path only handles task entities today; releasing a finding's claim with a stale token returns `stale_claim`. Workaround: wait for the role's TTL to elapse (the stuck-work sweeper resets it back to claimable) or call `override_verdict` on the finding to transition it into a terminal state directly.
 
 When any of these closes, update this prompt and drop the workaround.
 
