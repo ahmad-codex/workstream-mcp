@@ -70,7 +70,7 @@ public sealed class StartWorkTool : McpTool<StartWorkInput, StartWorkOutput>
 
         await NotificationHelpers.EnqueueBoardAndSlackAsync(
             _boardSync, _slack, _plans, plan, pt, updated, "task.in_progress", ctx, ct,
-            assigneeGithubUsername: ctx.GithubUsername).ConfigureAwait(false);
+            assigneeGithubUsername: ctx.GithubUsername, notifySlack: true).ConfigureAwait(false);
 
         return new StartWorkOutput(updated.Id, updated.Status);
     }
@@ -136,7 +136,7 @@ public sealed class SubmitFindingsTool : McpTool<SubmitFindingsInput, SubmitFind
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated,
-            updated.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct).ConfigureAwait(false);
+            updated.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct, notifySlack: true).ConfigureAwait(false);
 
         return new SubmitFindingsOutput(updated.Status, inserted.Select(f => f.Id).ToList());
     }
@@ -293,7 +293,7 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated, "task.review", ctx, ct).ConfigureAwait(false);
+        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated, "task.review", ctx, ct, notifySlack: true).ConfigureAwait(false);
 
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
     }
@@ -530,7 +530,7 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
             ["attempts"] = attemptCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
         await NotificationHelpers.EnqueueBoardAndSlackAsync(
-            _boardSync, _slack, _plans, plan, pt, updated, slackType, ctx, ct, extras).ConfigureAwait(false);
+            _boardSync, _slack, _plans, plan, pt, updated, slackType, ctx, ct, extras, notifySlack: true).ConfigureAwait(false);
 
         return new SubmitReviewDecisionOutput(updated.Id, updated.Status);
     }
@@ -669,14 +669,16 @@ internal static class NotificationHelpers
         RequestContext ctx,
         CancellationToken ct,
         System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null,
-        string? assigneeGithubUsername = null)
+        string? assigneeGithubUsername = null,
+        bool notifySlack = false)
     {
         if (plan.PrimaryBoardId is { } boardId)
         {
             var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
             await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername, ct).ConfigureAwait(false);
         }
-        await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
+        if (notifySlack)
+            await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
 
     public static async Task EnqueueFindingSlackAsync(

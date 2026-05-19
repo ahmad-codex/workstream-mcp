@@ -41,7 +41,8 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 |---|---|
 | `mark_task_status` | Set deferred/blocked/skipped/out_of_scope/needs_human_review |
 | `record_commit` | Attach a commit hash after the fact |
-| `create_task` | Create a new task (orchestrator decomposition) |
+| `create_task` | Create a new task (orchestrator decomposition). Board sync always fires; `notify_slack` defaults to **false** (opt-in) |
+| `create_tasks` | Bulk task creation for plan bootstrap. Board sync always fires; `notify_slack` defaults to **false** (opt-in) |
 | `override_verdict` | Force a state change without a claim — needs `can_override_verdict` |
 
 ## Forensic (§9.5)

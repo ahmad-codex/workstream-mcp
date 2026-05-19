@@ -585,7 +585,9 @@ Each submission tool atomically: validates the claim token, validates the state 
 
 **`record_commit(entity_type, entity_id, commit_hash, repo_id)`** — links a commit to a task, finding, or attempt after the fact. Writes a `commit_recorded` event. Optional second arg `target_branch` for context.
 
-**`create_task(plan_id, phase_id?, title, description, paths[]?, priority?, reference_pointer?)`** — admin-tool-grade. Creates a task in `pending`, triggers board item creation. Returns the new task. Used by orchestrators that decompose larger work units into tasks at runtime.
+**`create_task(plan_id, phase_id?, title, description, paths[]?, priority?, reference_pointer?, depends_on?, notify_slack?=false)`** — admin-tool-grade. Creates a task in `pending` and always triggers board item creation. Slack is opt-in: `notify_slack` defaults to `false`; pass `true` to post a `task.created` message in the project's Slack channel. Returns the new task. Used by orchestrators that decompose larger work units into tasks at runtime.
+
+**`create_tasks(plan_id, tasks[], notify_slack?=false)`** — bulk variant for plan bootstrap (e.g. Phase 0 of an audit). Each item may carry `depends_on_ids` and/or `depends_on_external_keys`; intra-batch keys are resolved on a second pass. Board sync fires for every inserted task. Slack is opt-in (default `false`) to avoid flooding the channel — pass `true` if you want every task announced.
 
 **`override_verdict(entity_type, entity_id, new_status, reason)`** — requires `can_override_verdict`.
 

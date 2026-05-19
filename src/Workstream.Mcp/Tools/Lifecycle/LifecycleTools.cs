@@ -75,7 +75,7 @@ public sealed class MarkTaskStatusTool : McpTool<MarkTaskStatusInput, MarkTaskSt
             {
                 var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
-                    _board, _slack, _plans, plan, pt.Value, updated, "task.blocked", ctx, ct, extras)
+                    _board, _slack, _plans, plan, pt.Value, updated, "task.blocked", ctx, ct, extras, notifySlack: true)
                     .ConfigureAwait(false);
             }
         }
@@ -138,7 +138,8 @@ public sealed record CreateTaskInput(
     string[]? Paths = null,
     string?  ReferencePointer = null,
     int      Priority = 0,
-    Guid[]?  DependsOn = null);
+    Guid[]?  DependsOn = null,
+    bool     NotifySlack = false);
 
 public sealed record CreateTaskOutput(Guid Id, string ExternalKey, string Status, Guid[]? DependsOn = null);
 
@@ -167,11 +168,12 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
         "this new task depends on — claim_next_task and claim_specific_task both skip tasks whose " +
         "predecessors are not in a terminal state (done / deferred / skipped / out_of_scope), so the " +
         "orchestrator can parallelize unblocked work and sequence blocked work. All predecessors must " +
-        "live on the same plan; cycles are rejected at insert. The task immediately fires a task.created " +
-        "notification: enqueues a board-sync row so the BoardSyncWorker creates a draft item on the " +
-        "bound GitHub Projects V2 board (Backlog column) on first drain, and posts a Slack message if " +
-        "the project has Slack configured. Used by orchestrators that decompose larger work units into " +
-        "tasks at runtime, and by admin tools that import work from external sources.";
+        "live on the same plan; cycles are rejected at insert. The board sync always fires so the " +
+        "BoardSyncWorker creates a draft item on the bound GitHub Projects V2 board (Backlog column) " +
+        "on first drain. Slack is opt-in: 'notify_slack' defaults to false to keep the channel quiet " +
+        "during plan setup and admin imports; pass true to post a task.created message if the project " +
+        "has Slack configured. Used by orchestrators that decompose larger work units into tasks at " +
+        "runtime, and by admin tools that import work from external sources.";
 
     protected override async Task<CreateTaskOutput> RunAsync(CreateTaskInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -192,9 +194,9 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
         }
 
         // Fan out so the new task immediately exists on the board (lazy-create on first
-        // worker drain) and gets announced in Slack. Best-effort: if the plan or plan-type
-        // can't be resolved, we still return the task — admin/import flows shouldn't fail
-        // because of a misconfigured downstream.
+        // worker drain) and, when notify_slack is true (the default), announce in Slack.
+        // Best-effort: if the plan or plan-type can't be resolved, we still return the task
+        // — admin/import flows shouldn't fail because of a misconfigured downstream.
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false);
         if (plan is not null)
         {
@@ -202,7 +204,8 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
             if (pt is not null)
             {
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers
-                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, task, "task.created", ctx, ct)
+                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, task, "task.created", ctx, ct,
+                        notifySlack: input.NotifySlack)
                     .ConfigureAwait(false);
             }
         }
@@ -226,7 +229,7 @@ public sealed record CreateTasksTaskInput(
     Guid[]?  DependsOnIds = null,
     string[]? DependsOnExternalKeys = null);
 
-public sealed record CreateTasksInput(Guid PlanId, IReadOnlyList<CreateTasksTaskInput> Tasks);
+public sealed record CreateTasksInput(Guid PlanId, IReadOnlyList<CreateTasksTaskInput> Tasks, bool NotifySlack = false);
 public sealed record CreateTasksOutput(IReadOnlyList<CreateTaskOutput> Tasks);
 
 public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutput>
@@ -257,8 +260,10 @@ public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutpu
         "batch is processed in two passes: first every task is inserted with no dependencies, then " +
         "edges are wired up using the resolved id map. Cycles are rejected — the call returns the " +
         "first cycle's task and rolls back nothing (already-inserted tasks remain, so the caller can " +
-        "fix the bad edge and re-run idempotently using unique external_keys). Each successful insert " +
-        "fires task.created notifications normally.";
+        "fix the bad edge and re-run idempotently using unique external_keys). Board sync always " +
+        "fires for every inserted task so the Project V2 board reflects the batch. Slack is opt-in: " +
+        "'notify_slack' defaults to false to avoid flooding the channel with a task.created burst — " +
+        "pass true if you want every task announced.";
 
     protected override async Task<CreateTasksOutput> RunAsync(CreateTasksInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -326,7 +331,8 @@ public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutpu
             if (pt is not null)
             {
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers
-                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, inserted[i], "task.created", ctx, ct)
+                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, inserted[i], "task.created", ctx, ct,
+                        notifySlack: input.NotifySlack)
                     .ConfigureAwait(false);
             }
             outputs.Add(new CreateTaskOutput(taskId, item.ExternalKey, inserted[i].Status, distinct.Length == 0 ? null : distinct));
@@ -390,7 +396,7 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
             {
                 var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
-                    _board, _slack, _plans, plan, pt.Value, updated, slackType, ctx, ct, extras)
+                    _board, _slack, _plans, plan, pt.Value, updated, slackType, ctx, ct, extras, notifySlack: true)
                     .ConfigureAwait(false);
             }
         }
