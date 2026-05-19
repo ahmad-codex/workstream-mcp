@@ -146,7 +146,19 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
 
         var claimed = await _tasks.ClaimSpecificAsync(input.TaskId, ctx.ActorId, input.Role, ttl, ct).ConfigureAwait(false);
         if (claimed is null)
+        {
+            // Distinguish "blocked by unmet dependency" from "held by another actor" so the
+            // orchestrator can react. dependencies_unmet carries the blocker ids in details.
+            var unmet = await _tasks.GetUnmetDependenciesAsync(input.TaskId, ct).ConfigureAwait(false);
+            if (unmet.Count > 0)
+            {
+                throw new WorkstreamException(new WorkstreamError(
+                    ErrorCodes.DependenciesUnmet,
+                    $"task has {unmet.Count} unmet dependencies (predecessors not in done/deferred/skipped/out_of_scope)",
+                    new Dictionary<string, object?> { ["unmet_dependencies"] = unmet }));
+            }
             throw new WorkstreamException(new WorkstreamError(ErrorCodes.TaskUnavailable, "task is currently held by another actor"));
+        }
 
         if (plan.PrimaryBoardId is { } boardId)
         {

@@ -108,11 +108,12 @@ public sealed record ExportPlanOutput(string Format, string Content);
 public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
 {
     private readonly IPlanRepository _plans;
+    private readonly ITaskRepository _tasks;
     private readonly IDbConnectionFactory _factory;
 
-    public ExportPlanTool(IPlanRepository plans, IDbConnectionFactory factory)
+    public ExportPlanTool(IPlanRepository plans, ITaskRepository tasks, IDbConnectionFactory factory)
     {
-        _plans = plans; _factory = factory;
+        _plans = plans; _tasks = tasks; _factory = factory;
     }
 
     public override string Name => "export_plan";
@@ -164,13 +165,23 @@ public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
         sb.AppendLine("## Tasks");
         await using (var conn = await _factory.OpenAsync(ct).ConfigureAwait(false))
         {
-            var rows = await Dapper.SqlMapper.QueryAsync<(string ExternalKey, string Title, string Status, int Priority)>(
+            var rows = (await Dapper.SqlMapper.QueryAsync<(Guid Id, string ExternalKey, string Title, string Status, int Priority)>(
                 conn, new Dapper.CommandDefinition(
-                "SELECT external_key, title, status, priority FROM tasks WHERE plan_id = @id ORDER BY priority DESC, created_at",
-                new { id = plan.Id }, cancellationToken: ct)).ConfigureAwait(false);
+                "SELECT id, external_key, title, status, priority FROM tasks WHERE plan_id = @id ORDER BY priority DESC, created_at",
+                new { id = plan.Id }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
+            var deps = await _tasks.GetDependenciesForPlanAsync(plan.Id, ct).ConfigureAwait(false);
+            var keyById = rows.ToDictionary(r => r.Id, r => r.ExternalKey);
+
             foreach (var r in rows)
             {
-                sb.AppendLine($"- `{r.ExternalKey}` (p{r.Priority}) **{r.Status}** — {r.Title}");
+                sb.Append($"- `{r.ExternalKey}` (p{r.Priority}) **{r.Status}** — {r.Title}");
+                if (deps.TryGetValue(r.Id, out var preds) && preds.Count > 0)
+                {
+                    var labels = preds.Select(id => keyById.TryGetValue(id, out var k) ? k : id.ToString());
+                    sb.Append($" — depends on: {string.Join(", ", labels)}");
+                }
+                sb.AppendLine();
             }
         }
         return new ExportPlanOutput("markdown", sb.ToString());

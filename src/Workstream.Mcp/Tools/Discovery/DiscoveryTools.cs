@@ -148,11 +148,20 @@ public sealed record DashboardStuck
 public sealed record DashboardEvent(long Id, DateTimeOffset At, string EntityType, Guid EntityId, string EventType, string? FromState, string? ToState);
 public sealed record DashboardPhaseCounts(string Name, IReadOnlyDictionary<string, int> Counts);
 
+public sealed record DashboardBlocked
+{
+    public Guid    TaskId    { get; init; }
+    public string  Title     { get; init; } = "";
+    public int     Priority  { get; init; }
+    public Guid[]  BlockedBy { get; init; } = Array.Empty<Guid>();
+}
+
 public sealed record GetPlanDashboardOutput(
     DashboardPlan                        Plan,
     IReadOnlyDictionary<string, int>     ByStatus,
     IReadOnlyList<DashboardPhaseCounts>  ByPhase,
     IReadOnlyList<DashboardClaimable>    NextClaimable,
+    IReadOnlyList<DashboardBlocked>      Blocked,
     IReadOnlyList<DashboardClaim>        MyActiveClaims,
     IReadOnlyList<DashboardStuck>        StuckWork,
     IReadOnlyList<DashboardEvent>        RecentEvents);
@@ -162,13 +171,15 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
     private readonly IPlanRepository _plans;
     private readonly IEventRepository _events;
     private readonly IPlanTypeCache _planTypes;
+    private readonly ITaskRepository _tasks;
     private readonly IDbConnectionFactory _factory;
 
-    public GetPlanDashboardTool(IPlanRepository plans, IEventRepository events, IPlanTypeCache planTypes, IDbConnectionFactory factory)
+    public GetPlanDashboardTool(IPlanRepository plans, IEventRepository events, IPlanTypeCache planTypes, ITaskRepository tasks, IDbConnectionFactory factory)
     {
         _plans = plans;
         _events = events;
         _planTypes = planTypes;
+        _tasks = tasks;
         _factory = factory;
     }
 
@@ -190,14 +201,46 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
 
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
 
+        // Next-claimable: pending AND no unmet predecessors. The same NOT EXISTS the
+        // claim SQL uses, so the dashboard matches what claim_next_task will actually pick.
         var nextClaimable = (await Dapper.SqlMapper.QueryAsync<DashboardClaimable>(conn, new Dapper.CommandDefinition("""
             SELECT t.id AS TaskId, t.title AS Title, t.priority AS Priority,
                    (SELECT name FROM phases WHERE id = t.phase_id) AS Phase
             FROM tasks t
             WHERE t.plan_id = @planId AND t.status = 'pending'
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_dependencies td
+                  JOIN tasks dep ON dep.id = td.depends_on_task_id
+                  WHERE td.task_id = t.id
+                    AND dep.status NOT IN ('done','deferred','skipped','out_of_scope')
+              )
             ORDER BY t.priority DESC, t.created_at
             LIMIT 5
             """, new { planId = plan.Id }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
+        // Blocked-by-deps: pending tasks waiting for predecessors. The orchestrator uses
+        // this to surface "what's holding the plan back" without a separate fetch.
+        var blockedRows = (await Dapper.SqlMapper.QueryAsync<(Guid TaskId, string Title, int Priority, Guid BlockerId)>(
+            conn, new Dapper.CommandDefinition("""
+            SELECT t.id AS TaskId, t.title AS Title, t.priority AS Priority,
+                   td.depends_on_task_id AS BlockerId
+            FROM tasks t
+            JOIN task_dependencies td ON td.task_id = t.id
+            JOIN tasks dep ON dep.id = td.depends_on_task_id
+            WHERE t.plan_id = @planId AND t.status = 'pending'
+              AND dep.status NOT IN ('done','deferred','skipped','out_of_scope')
+            ORDER BY t.priority DESC, t.created_at
+            """, new { planId = plan.Id }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+        var blocked = blockedRows
+            .GroupBy(r => r.TaskId)
+            .Select(g => new DashboardBlocked
+            {
+                TaskId = g.Key,
+                Title = g.First().Title,
+                Priority = g.First().Priority,
+                BlockedBy = g.Select(r => r.BlockerId).ToArray(),
+            })
+            .ToList();
 
         var myClaims = (await Dapper.SqlMapper.QueryAsync<DashboardClaim>(conn, new Dapper.CommandDefinition("""
             SELECT id AS TaskId, claim_role AS Role, claimed_until AS ClaimedUntil
@@ -242,6 +285,7 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
             byStatus.Counts,
             byPhase,
             nextClaimable,
+            blocked,
             myClaims,
             stuck,
             events);

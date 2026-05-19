@@ -21,4 +21,6 @@ public static class ErrorCodes
     public const string RoleNotAllowed          = "role_not_allowed";
     public const string PlanTypeUnknown         = "plan_type_unknown";
     public const string GuardFailed             = "guard_failed";
+    public const string DependenciesUnmet       = "dependencies_unmet";
+    public const string DependencyCycle         = "dependency_cycle";
 }

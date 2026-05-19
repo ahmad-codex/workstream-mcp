@@ -137,9 +137,10 @@ public sealed record CreateTaskInput(
     Guid?    PhaseId = null,
     string[]? Paths = null,
     string?  ReferencePointer = null,
-    int      Priority = 0);
+    int      Priority = 0,
+    Guid[]?  DependsOn = null);
 
-public sealed record CreateTaskOutput(Guid Id, string ExternalKey, string Status);
+public sealed record CreateTaskOutput(Guid Id, string ExternalKey, string Status, Guid[]? DependsOn = null);
 
 public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 {
@@ -162,7 +163,11 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 
     public override string Name => "create_task";
     public override string Description =>
-        "Create a new task on a plan, in pending status. The task immediately fires a task.created " +
+        "Create a new task on a plan, in pending status. Optional 'depends_on' is a list of task ids " +
+        "this new task depends on — claim_next_task and claim_specific_task both skip tasks whose " +
+        "predecessors are not in a terminal state (done / deferred / skipped / out_of_scope), so the " +
+        "orchestrator can parallelize unblocked work and sequence blocked work. All predecessors must " +
+        "live on the same plan; cycles are rejected at insert. The task immediately fires a task.created " +
         "notification: enqueues a board-sync row so the BoardSyncWorker creates a draft item on the " +
         "bound GitHub Projects V2 board (Backlog column) on first drain, and posts a Slack message if " +
         "the project has Slack configured. Used by orchestrators that decompose larger work units into " +
@@ -170,9 +175,21 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 
     protected override async Task<CreateTaskOutput> RunAsync(CreateTaskInput input, RequestContext ctx, CancellationToken ct)
     {
-        var task = await _tasks.InsertAsync(new WorkTaskInsert(
-            input.PlanId, input.PhaseId, input.ExternalKey, input.Title, input.Description,
-            input.Paths, input.ReferencePointer, input.Priority), ct).ConfigureAwait(false);
+        WorkTask task;
+        try
+        {
+            task = await _tasks.InsertAsync(new WorkTaskInsert(
+                input.PlanId, input.PhaseId, input.ExternalKey, input.Title, input.Description,
+                input.Paths, input.ReferencePointer, input.Priority, input.DependsOn), ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("cycle"))
+        {
+            throw new WorkstreamException(new WorkstreamError(ErrorCodes.DependencyCycle, ex.Message));
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("depends_on"))
+        {
+            throw new WorkstreamException(WorkstreamError.Validation(ex.Message));
+        }
 
         // Fan out so the new task immediately exists on the board (lazy-create on first
         // worker drain) and gets announced in Slack. Best-effort: if the plan or plan-type
@@ -190,7 +207,131 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
             }
         }
 
-        return new CreateTaskOutput(task.Id, task.ExternalKey, task.Status);
+        return new CreateTaskOutput(task.Id, task.ExternalKey, task.Status, input.DependsOn);
+    }
+}
+
+// ============================================================================
+// create_tasks — bulk insert with intra-batch dependency resolution by external_key
+// ============================================================================
+
+public sealed record CreateTasksTaskInput(
+    string   ExternalKey,
+    string   Title,
+    string?  Description = null,
+    Guid?    PhaseId = null,
+    string[]? Paths = null,
+    string?  ReferencePointer = null,
+    int      Priority = 0,
+    Guid[]?  DependsOnIds = null,
+    string[]? DependsOnExternalKeys = null);
+
+public sealed record CreateTasksInput(Guid PlanId, IReadOnlyList<CreateTasksTaskInput> Tasks);
+public sealed record CreateTasksOutput(IReadOnlyList<CreateTaskOutput> Tasks);
+
+public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutput>
+{
+    private readonly ITaskRepository _tasks;
+    private readonly IPlanRepository _plans;
+    private readonly Workstream.Core.StateMachine.IPlanTypeCache _planTypes;
+    private readonly Workstream.Mcp.Notifications.IBoardSyncEnqueue _board;
+    private readonly Workstream.Mcp.Notifications.ISlackNotifyEnqueue _slack;
+
+    public CreateTasksTool(
+        ITaskRepository tasks,
+        IPlanRepository plans,
+        Workstream.Core.StateMachine.IPlanTypeCache planTypes,
+        Workstream.Mcp.Notifications.IBoardSyncEnqueue board,
+        Workstream.Mcp.Notifications.ISlackNotifyEnqueue slack)
+    {
+        _tasks = tasks; _plans = plans; _planTypes = planTypes;
+        _board = board; _slack = slack;
+    }
+
+    public override string Name => "create_tasks";
+    public override string Description =>
+        "Bulk task creation for orchestrator bootstrap (e.g. Phase 0 of an audit). Accepts a list of " +
+        "tasks on a single plan. Each item may carry 'depends_on_ids' (uuid list referencing tasks " +
+        "already in the database) AND/OR 'depends_on_external_keys' (string list referencing other " +
+        "items in this same batch by their external_key — resolved to ids after the first pass). The " +
+        "batch is processed in two passes: first every task is inserted with no dependencies, then " +
+        "edges are wired up using the resolved id map. Cycles are rejected — the call returns the " +
+        "first cycle's task and rolls back nothing (already-inserted tasks remain, so the caller can " +
+        "fix the bad edge and re-run idempotently using unique external_keys). Each successful insert " +
+        "fires task.created notifications normally.";
+
+    protected override async Task<CreateTasksOutput> RunAsync(CreateTasksInput input, RequestContext ctx, CancellationToken ct)
+    {
+        if (input.Tasks.Count == 0)
+            return new CreateTasksOutput(Array.Empty<CreateTaskOutput>());
+
+        var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
+                   ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+
+        // Pass 1: insert every task without dependencies. Capture the id map keyed by
+        // external_key so pass 2 can resolve forward references.
+        var inserted = new List<WorkTask>(input.Tasks.Count);
+        var byKey = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        foreach (var item in input.Tasks)
+        {
+            var task = await _tasks.InsertAsync(new WorkTaskInsert(
+                input.PlanId, item.PhaseId, item.ExternalKey, item.Title, item.Description,
+                item.Paths, item.ReferencePointer, item.Priority, DependsOn: null), ct).ConfigureAwait(false);
+            inserted.Add(task);
+            byKey[item.ExternalKey] = task.Id;
+        }
+
+        // Pass 2: wire up dependencies. Each item's edges are inserted via a second
+        // InsertAsync call would re-insert the task — instead, write edges directly
+        // through the repository's dependency-only path. We don't have one yet; for the
+        // first cut, fall back to a tiny inline insert + cycle check that mirrors the
+        // single-task path.
+        var outputs = new List<CreateTaskOutput>(input.Tasks.Count);
+        for (var i = 0; i < input.Tasks.Count; i++)
+        {
+            var item = input.Tasks[i];
+            var taskId = inserted[i].Id;
+            var edges = new List<Guid>();
+            if (item.DependsOnIds is { Length: > 0 } ids)
+                edges.AddRange(ids);
+            if (item.DependsOnExternalKeys is { Length: > 0 } keys)
+            {
+                foreach (var k in keys)
+                {
+                    if (!byKey.TryGetValue(k, out var depId))
+                        throw new WorkstreamException(WorkstreamError.Validation(
+                            $"depends_on_external_keys references unknown key '{k}' for task '{item.ExternalKey}'"));
+                    edges.Add(depId);
+                }
+            }
+            var distinct = edges.Where(e => e != taskId).Distinct().ToArray();
+            if (distinct.Length > 0)
+            {
+                try
+                {
+                    await _tasks.WireDependenciesAsync(taskId, plan.Id, distinct, ct).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("cycle"))
+                {
+                    throw new WorkstreamException(new WorkstreamError(ErrorCodes.DependencyCycle,
+                        $"dependency cycle detected at task '{item.ExternalKey}'"));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new WorkstreamException(WorkstreamError.Validation(ex.Message));
+                }
+            }
+
+            if (pt is not null)
+            {
+                await Workstream.Mcp.Tools.Submission.NotificationHelpers
+                    .EnqueueBoardAndSlackAsync(_board, _slack, _plans, plan, pt.Value, inserted[i], "task.created", ctx, ct)
+                    .ConfigureAwait(false);
+            }
+            outputs.Add(new CreateTaskOutput(taskId, item.ExternalKey, inserted[i].Status, distinct.Length == 0 ? null : distinct));
+        }
+        return new CreateTasksOutput(outputs);
     }
 }
 

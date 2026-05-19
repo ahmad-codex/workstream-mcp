@@ -65,7 +65,9 @@ public sealed class TaskRepository : ITaskRepository
     public async Task<WorkTask> InsertAsync(WorkTaskInsert input, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
-        const string sql = $"""
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        const string insertSql = $"""
             INSERT INTO tasks (
                 plan_id, phase_id, external_key, title, description,
                 paths, reference_pointer, priority, status
@@ -76,8 +78,128 @@ public sealed class TaskRepository : ITaskRepository
             )
             RETURNING {TaskColumns}
             """;
-        var row = await conn.QuerySingleAsync<TaskRow>(new CommandDefinition(sql, input, cancellationToken: ct)).ConfigureAwait(false);
+        var row = await conn.QuerySingleAsync<TaskRow>(new CommandDefinition(insertSql, input, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+        if (input.DependsOn is { Length: > 0 } deps)
+        {
+            var distinctDeps = deps.Where(d => d != row.Id).Distinct().ToArray();
+            if (distinctDeps.Length > 0)
+            {
+                // Validate all predecessors exist on the same plan.
+                var sameplan = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                    SELECT COUNT(*) FROM tasks WHERE id = ANY(@ids) AND plan_id = @planId
+                    """, new { ids = distinctDeps, planId = row.PlanId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                if (sameplan != distinctDeps.Length)
+                    throw new InvalidOperationException("one or more depends_on tasks do not exist on this plan");
+
+                await conn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO task_dependencies (task_id, depends_on_task_id)
+                    SELECT @taskId, dep_id
+                    FROM unnest(@deps::uuid[]) AS dep_id
+                    ON CONFLICT DO NOTHING
+                    """, new { taskId = row.Id, deps = distinctDeps }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+                // Cycle check: walk every edge starting from this task; if we reach
+                // this task again, there's a cycle.
+                var cycle = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                    WITH RECURSIVE walk(node, depth) AS (
+                        SELECT depends_on_task_id, 1 FROM task_dependencies WHERE task_id = @taskId
+                        UNION
+                        SELECT td.depends_on_task_id, w.depth + 1
+                        FROM task_dependencies td
+                        JOIN walk w ON w.node = td.task_id
+                        WHERE w.depth < 100
+                    )
+                    SELECT COUNT(*) FROM walk WHERE node = @taskId
+                    """, new { taskId = row.Id }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                if (cycle > 0)
+                    throw new InvalidOperationException("dependency cycle detected");
+            }
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
         return row.ToDomain();
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetDependenciesAsync(Guid taskId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        var rows = await conn.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT depends_on_task_id FROM task_dependencies WHERE task_id = @taskId ORDER BY created_at",
+            new { taskId }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>> GetDependenciesForPlanAsync(Guid planId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        var rows = await conn.QueryAsync<(Guid TaskId, Guid DependsOn)>(new CommandDefinition("""
+            SELECT td.task_id AS TaskId, td.depends_on_task_id AS DependsOn
+            FROM task_dependencies td
+            JOIN tasks t ON t.id = td.task_id
+            WHERE t.plan_id = @planId
+            ORDER BY td.task_id, td.created_at
+            """, new { planId }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows
+            .GroupBy(r => r.TaskId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Guid>)g.Select(r => r.DependsOn).ToList());
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetUnmetDependenciesAsync(Guid taskId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        // Terminal-for-deps: a predecessor in any of these states unblocks its dependents.
+        // 'needs_human_review' is intentionally NOT in this set — that state means "a human
+        // still needs to act," so it shouldn't auto-unblock downstream work.
+        var rows = await conn.QueryAsync<Guid>(new CommandDefinition("""
+            SELECT td.depends_on_task_id
+            FROM task_dependencies td
+            JOIN tasks dep ON dep.id = td.depends_on_task_id
+            WHERE td.task_id = @taskId
+              AND dep.status NOT IN ('done','deferred','skipped','out_of_scope')
+            """, new { taskId }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    public async Task WireDependenciesAsync(Guid taskId, Guid planId, IReadOnlyList<Guid> dependsOn, CancellationToken ct = default)
+    {
+        if (dependsOn.Count == 0) return;
+        var deps = dependsOn.Where(d => d != taskId).Distinct().ToArray();
+        if (deps.Length == 0) return;
+
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        var sameplan = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            SELECT COUNT(*) FROM tasks WHERE id = ANY(@ids) AND plan_id = @planId
+            """, new { ids = deps, planId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (sameplan != deps.Length)
+            throw new InvalidOperationException("one or more depends_on tasks do not exist on this plan");
+
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO task_dependencies (task_id, depends_on_task_id)
+            SELECT @taskId, dep_id FROM unnest(@deps::uuid[]) AS dep_id
+            ON CONFLICT DO NOTHING
+            """, new { taskId, deps }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+        var cycle = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            WITH RECURSIVE walk(node, depth) AS (
+                SELECT depends_on_task_id, 1 FROM task_dependencies WHERE task_id = @taskId
+                UNION
+                SELECT td.depends_on_task_id, w.depth + 1
+                FROM task_dependencies td
+                JOIN walk w ON w.node = td.task_id
+                WHERE w.depth < 100
+            )
+            SELECT COUNT(*) FROM walk WHERE node = @taskId
+            """, new { taskId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (cycle > 0)
+        {
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            throw new InvalidOperationException("dependency cycle detected");
+        }
+
+        await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 
     // -----------------------------------------------------------------------
@@ -103,11 +225,17 @@ public sealed class TaskRepository : ITaskRepository
         var sql = $"""
             WITH next AS (
                 SELECT id AS picked_id
-                FROM tasks
+                FROM tasks t
                 WHERE plan_id = @planId
                   AND (
                       (status = 'pending' AND claim_token IS NULL)
                       OR (status = 'claimed' AND claim_token IS NOT NULL AND claimed_until < now())
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM task_dependencies td
+                      JOIN tasks dep ON dep.id = td.depends_on_task_id
+                      WHERE td.task_id = t.id
+                        AND dep.status NOT IN ('done','deferred','skipped','out_of_scope')
                   )
                 ORDER BY priority DESC, created_at ASC
                 FOR UPDATE SKIP LOCKED
@@ -140,11 +268,17 @@ public sealed class TaskRepository : ITaskRepository
         var sql = $"""
             WITH target AS (
                 SELECT id AS picked_id
-                FROM tasks
+                FROM tasks t
                 WHERE id = @taskId
                   AND (
                       (status = 'pending' AND claim_token IS NULL)
                       OR (status = 'claimed' AND claim_token IS NOT NULL AND claimed_until < now())
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM task_dependencies td
+                      JOIN tasks dep ON dep.id = td.depends_on_task_id
+                      WHERE td.task_id = t.id
+                        AND dep.status NOT IN ('done','deferred','skipped','out_of_scope')
                   )
                 FOR UPDATE
             )

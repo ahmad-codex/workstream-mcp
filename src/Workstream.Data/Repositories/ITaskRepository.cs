@@ -94,6 +94,33 @@ public interface ITaskRepository
 
     /// <summary>Return the numeric databaseId previously stored for this task, or null.</summary>
     Task<long?> GetGithubBoardItemNumberAsync(Guid taskId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Return every <c>depends_on_task_id</c> for the given task. Empty list when the
+    /// task has no declared dependencies.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetDependenciesAsync(Guid taskId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Return every dependency edge for every task on the plan, keyed by dependent task id.
+    /// Used by <c>get_plan_dashboard</c> and <c>export_plan</c> to avoid N+1 fetches.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>> GetDependenciesForPlanAsync(Guid planId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Return the subset of a task's dependencies whose predecessors are NOT in a terminal
+    /// state — i.e. the blockers. Empty list means the task is currently claimable from a
+    /// dependency perspective. Terminal-for-deps = {done, deferred, skipped, out_of_scope}.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetUnmetDependenciesAsync(Guid taskId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Add dependency edges to an already-inserted task in one transaction. Validates same-plan
+    /// and runs the cycle-check recursive CTE. Throws InvalidOperationException on validation
+    /// or cycle. Used by the bulk-create tool (create_tasks) which inserts every task first,
+    /// then wires edges in a second pass so intra-batch external_key references resolve.
+    /// </summary>
+    Task WireDependenciesAsync(Guid taskId, Guid planId, IReadOnlyList<Guid> dependsOn, CancellationToken ct = default);
 }
 
 public sealed record WorkTaskInsert(
@@ -104,6 +131,7 @@ public sealed record WorkTaskInsert(
     string?  Description,
     string[]? Paths,
     string?  ReferencePointer,
-    int      Priority);
+    int      Priority,
+    Guid[]?  DependsOn = null);
 
 public sealed record ClaimedTask(WorkTask Task, Guid ClaimToken);

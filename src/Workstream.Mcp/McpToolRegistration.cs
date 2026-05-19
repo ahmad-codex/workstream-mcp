@@ -37,6 +37,7 @@ public static class McpToolRegistration
         services.AddSingleton<IMcpTool, Tools.Lifecycle.MarkTaskStatusTool>();
         services.AddSingleton<IMcpTool, Tools.Lifecycle.RecordCommitTool>();
         services.AddSingleton<IMcpTool, Tools.Lifecycle.CreateTaskTool>();
+        services.AddSingleton<IMcpTool, Tools.Lifecycle.CreateTasksTool>();
         services.AddSingleton<IMcpTool, Tools.Lifecycle.OverrideVerdictTool>();
 
         // Forensic
