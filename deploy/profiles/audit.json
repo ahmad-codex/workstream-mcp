@@ -75,10 +75,10 @@
     }
   },
   "role_personas": {
-    "auditor":      { "persona": "Smith", "label": "Auditor",      "emoji": ":large_blue_circle:",   "color": "#2563EB" },
-    "verifier":     { "persona": "Jones", "label": "Verifier",     "emoji": ":large_purple_circle:", "color": "#7C3AED" },
-    "fixer":        { "persona": "Brown", "label": "Fixer",        "emoji": ":large_orange_circle:", "color": "#EA580C" },
-    "fix_verifier": { "persona": "Davis", "label": "Fix-Verifier", "emoji": ":large_green_circle:",  "color": "#16A34A" }
+    "auditor":      { "persona": "Smith", "label": "Auditor",      "emoji": ":black_small_square:", "color": "#2563EB" },
+    "verifier":     { "persona": "Jones", "label": "Verifier",     "emoji": ":black_small_square:", "color": "#7C3AED" },
+    "fixer":        { "persona": "Brown", "label": "Fixer",        "emoji": ":black_small_square:", "color": "#EA580C" },
+    "fix_verifier": { "persona": "Davis", "label": "Fix-Verifier", "emoji": ":black_small_square:", "color": "#16A34A" }
   },
   "slack_roles": {
     "task.claimed":      "auditor",
@@ -104,7 +104,7 @@
     "finding.ambiguous":          "{actor_line}\n:grey_question: Ambiguous finding {finding_link}\n> on audit task {task_title_link} — reason: {reason}",
     "finding.needs_human_review": "{actor_line}\n:rotating_light: Escalated to human review — {finding_link}\n> on audit task {task_title_link}\n> reason: {reason}",
     "finding.deferred":           "{actor_line}\n:double_vertical_bar: Finding deferred — {finding_link}\n> reason: {reason}",
-    "fix.confirmed":              "{actor_line}\n:white_check_mark: Fix confirmed for {finding_link} — commit `{commit}`",
+    "fix.confirmed":              "{actor_line}\n:white_check_mark: Fix confirmed for {finding_link}",
     "fix.failed":                 "{actor_line}\n:x: Fix failed for {finding_link} — attempt {attempt}\n> reason: {reason}",
     "fix.partial":                "{actor_line}\n:large_yellow_circle: Partial fix for {finding_link} — residual tracked as a child finding",
     "plan.activated":             ":rocket: Audit plan *{plan_name}* is now active",

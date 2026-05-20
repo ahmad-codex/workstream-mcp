@@ -280,11 +280,11 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 
     private static string SeverityEmoji(string? severity) => (severity ?? "").ToLowerInvariant() switch
     {
-        "critical" => ":red_circle:",
-        "high"     => ":large_orange_circle:",
-        "medium"   => ":large_yellow_circle:",
-        "low"      => ":white_circle:",
-        _          => ":red_circle:",
+        "critical" => ":small_red_triangle:",
+        "high"     => ":small_orange_diamond:",
+        "medium"   => ":small_blue_diamond:",
+        "low"      => ":white_small_square:",
+        _          => ":small_red_triangle:",
     };
 
     /// <summary>Collapse a finding symptom to a single short line for a Slack link label.</summary>

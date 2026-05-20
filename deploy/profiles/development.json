@@ -52,8 +52,8 @@
     }
   },
   "role_personas": {
-    "developer": { "persona": "Developer", "label": "Developer", "emoji": ":hammer_and_wrench:", "color": "#2563EB" },
-    "reviewer":  { "persona": "Reviewer",  "label": "Reviewer",  "emoji": ":eyes:",              "color": "#7C3AED" }
+    "developer": { "persona": "Developer", "label": "Developer", "emoji": ":black_small_square:", "color": "#2563EB" },
+    "reviewer":  { "persona": "Reviewer",  "label": "Reviewer",  "emoji": ":black_small_square:", "color": "#7C3AED" }
   },
   "slack_roles": {
     "task.created":     "developer",
