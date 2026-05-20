@@ -55,6 +55,7 @@ public static class McpToolRegistration
         services.AddSingleton<IMcpTool, Tools.Setup.CreatePlanTool>();
         services.AddSingleton<IMcpTool, Tools.Setup.AddPhaseTool>();
         services.AddSingleton<IMcpTool, Tools.Setup.ActivatePlanTool>();
+        services.AddSingleton<IMcpTool, Tools.Setup.ArchivePlanTool>();
 
         return services;
     }

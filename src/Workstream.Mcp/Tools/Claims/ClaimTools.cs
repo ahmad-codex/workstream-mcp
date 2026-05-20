@@ -81,6 +81,7 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
     {
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(plan);
         var (pt, graph) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, $"plan_type '{plan.PlanTypeId}'"));
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
@@ -139,6 +140,7 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("task"));
         var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(plan);
         var (pt, graph) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, plan.PlanTypeId));
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
@@ -200,6 +202,7 @@ public sealed class ClaimNextFindingForVerificationTool : McpTool<ClaimFindingIn
     {
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(plan);
         var (pt, _) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, plan.PlanTypeId));
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, "verifier", null);
@@ -235,6 +238,7 @@ public sealed class ClaimNextFindingForFixTool : McpTool<ClaimFindingInput, Clai
     {
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(plan);
         var (pt, _) = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(new WorkstreamError(ErrorCodes.PlanTypeUnknown, plan.PlanTypeId));
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, "fixer", null);

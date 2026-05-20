@@ -71,10 +71,11 @@
     "task.blocked":     "{actor_line}\n:no_entry: Blocked: {task_title_link}\n> {reason}",
     "task.needs_human_review": "{actor_line}\n:rotating_light: Needs human review: {task_title_link}\n> {reason}",
     "plan.activated":   ":rocket: Plan *{plan_name}* is now active",
-    "plan.completed":   ":tada: Plan *{plan_name}* complete"
+    "plan.completed":   ":tada: Plan *{plan_name}* complete",
+    "plan.archived":    ":file_cabinet: Plan *{plan_name}* archived — disabled, no longer accepting work"
   },
   "default_notify_on": [
     "task.created","task.claimed","task.in_progress","task.review","task.done","task.blocked","task.needs_human_review",
-    "plan.activated","plan.completed"
+    "plan.activated","plan.completed","plan.archived"
   ]
 }

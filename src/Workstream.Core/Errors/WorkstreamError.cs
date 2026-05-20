@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Workstream.Core.Errors;
@@ -35,4 +36,15 @@ public sealed record WorkstreamError(
     public static WorkstreamError PermissionDenied(string permission)
         => new(ErrorCodes.PermissionDenied, $"permission '{permission}' required",
             new Dictionary<string, object?> { ["required_permission"] = permission });
+
+    public static WorkstreamError PlanArchived(Guid planId)
+        => new(
+            ErrorCodes.PlanArchived,
+            "this plan is archived (disabled) — archived plans accept no new claims or tasks; " +
+            "create and activate a new plan to continue work",
+            new Dictionary<string, object?>
+            {
+                ["plan_id"] = planId,
+                ["status"]  = "archived",
+            });
 }

@@ -23,4 +23,5 @@ public static class ErrorCodes
     public const string GuardFailed             = "guard_failed";
     public const string DependenciesUnmet       = "dependencies_unmet";
     public const string DependencyCycle         = "dependency_cycle";
+    public const string PlanArchived            = "plan_archived";
 }

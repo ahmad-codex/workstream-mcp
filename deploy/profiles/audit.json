@@ -108,12 +108,13 @@
     "fix.failed":                 "{actor_line}\n:x: Fix failed for {finding_link} — attempt {attempt}\n> reason: {reason}",
     "fix.partial":                "{actor_line}\n:large_yellow_circle: Partial fix for {finding_link} — residual tracked as a child finding",
     "plan.activated":             ":rocket: Audit plan *{plan_name}* is now active",
-    "plan.completed":             ":tada: Audit plan *{plan_name}* complete — every task reached a terminal state"
+    "plan.completed":             ":tada: Audit plan *{plan_name}* complete — every task reached a terminal state",
+    "plan.archived":              ":file_cabinet: Audit plan *{plan_name}* archived — disabled, no longer accepting work"
   },
   "default_notify_on": [
     "task.claimed","task.in_progress","task.review","task.done","task.blocked","task.needs_human_review",
     "finding.confirmed","finding.rejected","finding.ambiguous","finding.needs_human_review","finding.deferred",
     "fix.confirmed","fix.failed","fix.partial",
-    "plan.activated","plan.completed"
+    "plan.activated","plan.completed","plan.archived"
   ]
 }

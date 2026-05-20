@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
@@ -217,6 +218,12 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
     protected override async Task<ActivatePlanOutput> RunAsync(ActivatePlanInput input, RequestContext ctx, CancellationToken ct)
     {
         AdminGate.Require(ctx);
+
+        // An archived plan is retired for good — activate_plan must not resurrect it.
+        var existing = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
+                       ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(existing);
+
         var plan = await _plans.SetStatusAsync(input.PlanId, PlanStatus.Active, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
 
@@ -237,5 +244,70 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
 
         await _slack.EnqueueForPlanAsync(plan, pt, "plan.activated", ctx, ct).ConfigureAwait(false);
         return new ActivatePlanOutput(plan.Id, plan.Status, enqueued);
+    }
+}
+
+// ============================================================================
+// archive_plan
+// ============================================================================
+
+public sealed record ArchivePlanInput(Guid PlanId, string? Reason = null);
+public sealed record ArchivePlanOutput(Guid Id, string Status, bool AlreadyArchived);
+
+public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutput>
+{
+    private readonly IPlanRepository _plans;
+    private readonly IPlanTypeCache _planTypes;
+    private readonly IEventRepository _events;
+    private readonly ISlackNotifyEnqueue _slack;
+
+    public ArchivePlanTool(IPlanRepository plans, IPlanTypeCache planTypes,
+        IEventRepository events, ISlackNotifyEnqueue slack)
+    {
+        _plans = plans; _planTypes = planTypes; _events = events; _slack = slack;
+    }
+
+    public override string Name => "archive_plan";
+    public override string Description =>
+        "Archive (disable) a plan so it stops accepting work. Requires can_archive_plan on the " +
+        "calling actor. An archived plan is frozen: claim_next_task, claim_specific_task, the " +
+        "finding-claim tools, create_task / create_tasks, and activate_plan all reject it with the " +
+        "structured plan_archived error. Use this to retire a finished or abandoned plan — the next " +
+        "time an orchestrator bootstraps it will find no active plan of that type and create a fresh " +
+        "one, which is how you start a new audit/development pass on demand. Archiving is one-way " +
+        "(there is no un-archive) and idempotent; the plan's tasks, events, and board cards are left " +
+        "intact for forensics. Posts a plan.archived Slack notice. Returns the plan id, its new " +
+        "status, and already_archived (true when the plan was already archived and nothing changed).";
+
+    protected override async Task<ArchivePlanOutput> RunAsync(ArchivePlanInput input, RequestContext ctx, CancellationToken ct)
+    {
+        if (!ctx.HasPermission("can_archive_plan"))
+            throw new WorkstreamException(WorkstreamError.PermissionDenied("can_archive_plan"));
+
+        var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
+                   ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+
+        // Idempotent: archiving an already-archived plan changes nothing — no event, no Slack.
+        if (plan.Status == PlanStatus.Archived)
+            return new ArchivePlanOutput(plan.Id, plan.Status, AlreadyArchived: true);
+
+        var previousStatus = plan.Status;
+        var archived = await _plans.SetStatusAsync(input.PlanId, PlanStatus.Archived, ct).ConfigureAwait(false)
+                       ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+
+        // The events table is append-only and load-bearing for forensics: record who
+        // archived the plan, the status it came from, and the operator's reason.
+        var reason = string.IsNullOrWhiteSpace(input.Reason) ? null : input.Reason!.Trim();
+        await _events.EmitAsync(
+            ctx.ActorId, EntityType.Plan, archived.Id, "archived",
+            fromState: previousStatus, toState: PlanStatus.Archived,
+            payloadJson: JsonSerializer.Serialize(new { reason }), ct).ConfigureAwait(false);
+
+        // Best-effort Slack — a missing plan-type must not fail the archive itself.
+        var pt = await _planTypes.GetAsync(archived.PlanTypeId, ct).ConfigureAwait(false);
+        if (pt is not null)
+            await _slack.EnqueueForPlanAsync(archived, pt.Value, "plan.archived", ctx, ct).ConfigureAwait(false);
+
+        return new ArchivePlanOutput(archived.Id, archived.Status, AlreadyArchived: false);
     }
 }

@@ -185,6 +185,12 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 
     protected override async Task<CreateTaskOutput> RunAsync(CreateTaskInput input, RequestContext ctx, CancellationToken ct)
     {
+        // Resolve the plan up front so an archived (disabled) plan is rejected before we
+        // insert anything — an archived plan accepts no new tasks.
+        var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false);
+        if (plan is not null)
+            PlanGuards.EnsureNotArchived(plan);
+
         WorkTask task;
         try
         {
@@ -203,9 +209,8 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
 
         // Fan out so the new task immediately exists on the board (lazy-create on first
         // worker drain) and, when notify_slack is true (the default), announce in Slack.
-        // Best-effort: if the plan or plan-type can't be resolved, we still return the task
-        // — admin/import flows shouldn't fail because of a misconfigured downstream.
-        var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false);
+        // Best-effort: if the plan-type can't be resolved, we still return the task —
+        // admin/import flows shouldn't fail because of a misconfigured downstream.
         if (plan is not null)
         {
             var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
@@ -280,6 +285,7 @@ public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutpu
 
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
+        PlanGuards.EnsureNotArchived(plan);
         var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
 
         // Pass 1: insert every task without dependencies. Capture the id map keyed by
