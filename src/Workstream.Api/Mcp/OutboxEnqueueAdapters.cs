@@ -196,24 +196,30 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 
     /// <summary>
     /// Build the message identity: the in-body <c>{actor_line}</c> header, the attachment
-    /// colour, and the attachment author row. The role is resolved from the plan-type's
-    /// <c>slack_roles</c> map; the persona, emoji and colour from <c>role_personas</c>.
+    /// colour, and the attachment author row. The role is the caller's declared
+    /// <see cref="RequestContext.ActingRole"/> (the <c>as_agent</c> payload field) when
+    /// present, otherwise resolved from the plan-type's <c>slack_roles</c> map; the
+    /// persona, emoji and colour come from <c>role_personas</c>.
     ///
     /// A human actor's identity moves to the attachment author row so it can carry the
     /// person's real GitHub avatar (<c>github.com/&lt;login&gt;.png</c>); their in-body
-    /// actor line is left empty. An AI actor keeps the role-persona emoji line in the
-    /// body and has no author row (the personas are not GitHub accounts).
+    /// actor line is left empty. An AI actor — or a human who declared an <c>as_agent</c>
+    /// role for the call — keeps the role-persona emoji line in the body and has no
+    /// author row (the personas are not GitHub accounts).
     /// </summary>
     private static ActorIdentity ResolveActorIdentity(
         PlanType pt, string notificationType, RequestContext ctx)
     {
         string? persona = null, label = null, emoji = null, color = null;
+        // An explicit as_agent role wins; otherwise derive the role from the
+        // notification type via slack_roles.
+        var role = string.IsNullOrWhiteSpace(ctx.ActingRole) ? null : ctx.ActingRole!.Trim();
         try
         {
             using var doc = JsonDocument.Parse(pt.ConfigJson);
             var root = doc.RootElement;
-            string? role = null;
-            if (root.TryGetProperty("slack_roles", out var roles) && roles.ValueKind == JsonValueKind.Object
+            if (role is null
+                && root.TryGetProperty("slack_roles", out var roles) && roles.ValueKind == JsonValueKind.Object
                 && roles.TryGetProperty(notificationType, out var roleEl) && roleEl.ValueKind == JsonValueKind.String)
             {
                 role = roleEl.GetString();
@@ -230,7 +236,10 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         }
         catch (JsonException) { /* fall through to a generic identity */ }
 
-        var isHuman = string.Equals(ctx.ActorType, "human", StringComparison.OrdinalIgnoreCase);
+        // A caller that declared an as_agent role renders as an AI agent even on a
+        // human token — attribution follows the declared role, not actor_type.
+        var actingAsAgent = !string.IsNullOrWhiteSpace(ctx.ActingRole);
+        var isHuman = !actingAsAgent && string.Equals(ctx.ActorType, "human", StringComparison.OrdinalIgnoreCase);
         var kind = isHuman ? "Human" : "AI Agent";
 
         // Escalations and failures get a red bar even with no role persona; anything

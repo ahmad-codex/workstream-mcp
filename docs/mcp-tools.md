@@ -65,6 +65,10 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 | `add_phase` | Add a phase to a plan |
 | `activate_plan` | Draft → active; enqueues board items for every task |
 
+## The `as_agent` field (cross-cutting)
+
+Any tool call may include an optional `as_agent` string in its `arguments` (e.g. `"auditor"`, `"verifier"`, `"fixer"`, `"fix_verifier"`). It declares the agent role the call acts for, so Slack posts render that role's persona instead of attributing the post to the human who owns the URL token. It is display-only — the `events` table always records the real actor. Orchestrators that share a human operator's token should pass it on every workflow call; omit it for genuine manual actions. See [slack-setup.md](./slack-setup.md#actor-identity-who-a-post-is-attributed-to).
+
 ## Error codes (§9.7)
 
 `unauthorized`, `not_found`, `stale_claim`, `illegal_transition`, `permission_denied`, `retry_cap_exceeded`, `validation_error`, `conflict`, `external_dependency_error`, `service_unavailable`, `task_unavailable`, `no_work_available`, `role_not_allowed`, `plan_type_unknown`, `guard_failed`.

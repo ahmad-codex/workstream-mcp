@@ -16,8 +16,15 @@ public sealed record RequestContext(
     bool    CanMarkNeedsHumanReview,
     string  TraceId,
     DateTimeOffset Now,
-    string? DisplayName = null)
+    string? DisplayName = null,
+    string? ActingRole = null)
 {
+    // ActingRole: optional agent role declared per-call via the `as_agent` payload
+    // field (e.g. "auditor", "verifier", "fixer", "fix_verifier"). When set, Slack
+    // posts render that role's persona even though the token belongs to a human —
+    // attribution follows the declared role. Display-only: the events table still
+    // records the real ActorId.
+
     /// <summary>
     /// User-facing label for templates (Slack body, etc.) — display name when present,
     /// github username otherwise. Identity/audit code paths should use

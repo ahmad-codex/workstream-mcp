@@ -131,12 +131,14 @@ Each plan type's `default_notify_on` array decides which events produce Slack no
 
 ## Actor identity (who a post is attributed to)
 
-Every task/finding post carries an identity resolved from the **calling actor's `actor_type`**:
+Every task/finding post carries an identity. By default it follows the **calling actor's `actor_type`**:
 
 - `human` — the post shows the person's display name, role label, a `Human` tag, and their GitHub avatar (`github.com/<login>.png`) in the attachment author row.
-- `orchestrator` / `subagent` — the post shows the plan-type's role persona for that event (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis; development: Developer, Reviewer), an `AI Agent` tag, and a role-coloured bar.
+- `orchestrator` / `subagent` — the post shows the plan-type's role persona for that event, an `AI Agent` tag, and a role-coloured bar.
 
-The persona and colour come from the plan profile's `role_personas`, keyed via `slack_roles` (notification type → role). An AI agent that runs a plan must therefore have its own `orchestrator`/`subagent` workstream user — running it under a human's URL token attributes every automated step to that person instead of the role persona.
+A tool call may override this with an optional **`as_agent`** field in its `arguments`, naming the role the call acts for (e.g. `"auditor"`). When present, the post renders that role's persona (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis; development: Developer, Reviewer) and the `AI Agent` tag — even when the URL token belongs to a human. This is how an orchestrator that shares a human's token still posts as the role persona. It is display-only: the `events` table always records the real actor.
+
+The persona and colour come from the plan profile's `role_personas`; without `as_agent` the role is derived from `slack_roles` (notification type → role).
 
 ## Threading
 

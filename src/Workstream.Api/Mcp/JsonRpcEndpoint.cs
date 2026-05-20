@@ -126,10 +126,29 @@ public static class JsonRpcEndpoint
             return;
         }
 
+        // Optional `as_agent` payload field: lets the caller declare the agent role
+        // this call acts as (e.g. "auditor"), so Slack renders the role persona even
+        // when the URL token belongs to a human. Display-only — the events table still
+        // records the real actor_id. Matched case- and underscore-insensitively.
+        var callCtx = ctx;
+        if (args.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in args.EnumerateObject())
+            {
+                if (prop.Name.Replace("_", "").Equals("asagent", StringComparison.OrdinalIgnoreCase)
+                    && prop.Value.ValueKind == JsonValueKind.String
+                    && prop.Value.GetString() is { Length: > 0 } role)
+                {
+                    callCtx = ctx with { ActingRole = role.Trim() };
+                    break;
+                }
+            }
+        }
+
         ToolResult result;
         try
         {
-            result = await tool.ExecuteAsync(input, ctx, http.RequestAborted).ConfigureAwait(false);
+            result = await tool.ExecuteAsync(input, callCtx, http.RequestAborted).ConfigureAwait(false);
         }
         catch (WorkstreamException wx)
         {
@@ -169,6 +188,9 @@ public static class JsonRpcEndpoint
                 }
             }
         }
+        // Universal optional field, handled by the endpoint not the tool record:
+        // declares the agent role this call acts as so Slack renders that persona.
+        props["as_agent"] = new { type = "string" };
         return new { type = "object", properties = props, required = required.ToArray() };
     }
 

@@ -62,14 +62,7 @@ If the developer's Claude session dies anywhere between steps 4 and 6, the claim
 
 ## Audit flow (same surface, different roles)
 
-An orchestrator agent gets its **own** workstream user — `actor_type = orchestrator`, its own URL token, never a human's. The actor type drives Slack attribution: posts from an `orchestrator` (or `subagent`) actor render the plan-type's role personas (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis); posts from a `human` actor render that person's name and GitHub avatar. Running an audit under a human's token mislabels every automated step as that human — provision the orchestrator its own identity:
-
-```bash
-workstream-admin user create --github-username crbrl-orchestrator --display "Crbrl Audit Orchestrator" --type orchestrator
-workstream-admin user grant --github-username crbrl-orchestrator --permission is_admin   # plan create/activate is admin-gated
-```
-
-It calls:
+An orchestrator agent runs against the same URL pattern. Because one URL token can be shared between a human operator and their automated runs, each tool call that posts to Slack may carry an optional `as_agent` field naming the role it acts for (`"auditor"`, `"verifier"`, `"fixer"`, `"fix_verifier"`). The server then renders that role's persona (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis) instead of the token owner's name and avatar. Omit `as_agent` for genuine manual actions so they stay attributed to the person. It calls:
 
 - `claim_next_task(plan_id, "auditor")` to start auditing a feature.
 - `submit_findings(claim_token, [...])` to record findings.
