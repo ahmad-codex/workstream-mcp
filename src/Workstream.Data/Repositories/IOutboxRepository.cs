@@ -50,6 +50,12 @@ public sealed record SlackNotifyRow
     // Attachment colour bar (hex, e.g. "#7C3AED"). NULL => post as a plain message.
     // Resolved at enqueue time from the plan-type's role_personas.
     public string? Color            { get; init; }
+    // Attachment author row. For a human actor AuthorIcon is the public GitHub avatar
+    // and AuthorLink the profile, so the message shows the person's photo; all NULL for
+    // AI actors (their role persona shows in the message body instead).
+    public string? AuthorName       { get; init; }
+    public string? AuthorIcon       { get; init; }
+    public string? AuthorLink       { get; init; }
     public string? ThreadTs         { get; init; }
     public string? SlackTs          { get; init; }
     public int     Attempts         { get; init; }

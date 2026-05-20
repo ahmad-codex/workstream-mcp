@@ -33,9 +33,10 @@ public sealed class OutboxBoardSyncEnqueue : IBoardSyncEnqueue
 ///
 /// Every body gets a computed <c>{actor_line}</c> header — the acting role's persona,
 /// role label, and an AI Agent / Human tag — plus an attachment colour keyed to the
-/// role. Task and finding bodies are clickable: tasks deep-link to their bound Project
-/// V2 card, findings deep-link to the parent task's card (findings have no card of
-/// their own). Tokens the caller did not supply are stripped, never left as a literal
+/// role. A human actor's identity instead goes to the attachment author row, where it
+/// carries the person's real GitHub avatar. Task and finding bodies are clickable:
+/// tasks deep-link to their bound Project V2 card, findings deep-link to the parent
+/// task's card. Tokens the caller did not supply are stripped, never left as a literal
 /// <c>{placeholder}</c>.
 /// </summary>
 public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
@@ -65,11 +66,11 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var linkUrl = itemUrl ?? boardUrl;
         var titleLink = linkUrl is null ? $"*{SlackEscape(task.Title)}*" : $"<{linkUrl}|{SlackEscape(task.Title)}>";
 
-        var (actorLine, color) = ResolveActorIdentity(pt.Row, notificationType, ctx);
+        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx);
 
         var tokens = new Dictionary<string, string>
         {
-            ["actor_line"]       = actorLine,
+            ["actor_line"]       = identity.ActorLine,
             ["actor"]            = ctx.DisplayActor,
             ["task_title"]       = task.Title,
             ["task_title_link"]  = titleLink,
@@ -95,7 +96,8 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Task, EntityId = task.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, Color = color,
+            Body = body, Color = identity.Color,
+            AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }
@@ -118,11 +120,11 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var findingLabel = summary.Length == 0 ? finding.ExternalKey : $"{finding.ExternalKey} — {summary}";
         var findingLink = linkUrl is null ? $"*{SlackEscape(findingLabel)}*" : $"<{linkUrl}|{SlackEscape(findingLabel)}>";
 
-        var (actorLine, color) = ResolveActorIdentity(pt.Row, notificationType, ctx);
+        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx);
 
         var tokens = new Dictionary<string, string>
         {
-            ["actor_line"]      = actorLine,
+            ["actor_line"]      = identity.ActorLine,
             ["actor"]           = ctx.DisplayActor,
             ["finding_key"]     = finding.ExternalKey,
             ["finding_summary"] = summary,
@@ -144,7 +146,8 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Finding, EntityId = finding.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, Color = color,
+            Body = body, Color = identity.Color,
+            AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }
@@ -192,12 +195,16 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     }
 
     /// <summary>
-    /// Build the <c>{actor_line}</c> header and the attachment colour for a notification.
-    /// The role is resolved from the plan-type's <c>slack_roles</c> map; the persona,
-    /// emoji and colour from <c>role_personas</c>. Humans always show their real name
-    /// (a task can be handled by a person); AI actors show the role persona.
+    /// Build the message identity: the in-body <c>{actor_line}</c> header, the attachment
+    /// colour, and the attachment author row. The role is resolved from the plan-type's
+    /// <c>slack_roles</c> map; the persona, emoji and colour from <c>role_personas</c>.
+    ///
+    /// A human actor's identity moves to the attachment author row so it can carry the
+    /// person's real GitHub avatar (<c>github.com/&lt;login&gt;.png</c>); their in-body
+    /// actor line is left empty. An AI actor keeps the role-persona emoji line in the
+    /// body and has no author row (the personas are not GitHub accounts).
     /// </summary>
-    private static (string ActorLine, string? Color) ResolveActorIdentity(
+    private static ActorIdentity ResolveActorIdentity(
         PlanType pt, string notificationType, RequestContext ctx)
     {
         string? persona = null, label = null, emoji = null, color = null;
@@ -221,38 +228,42 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
                 color   = GetStr(p, "color");
             }
         }
-        catch (JsonException) { /* fall through to a generic line */ }
+        catch (JsonException) { /* fall through to a generic identity */ }
 
         var isHuman = string.Equals(ctx.ActorType, "human", StringComparison.OrdinalIgnoreCase);
         var kind = isHuman ? "Human" : "AI Agent";
 
-        string actorLine;
-        if (isHuman)
-        {
-            // A person always shows their real name; the role label is informative context.
-            var roleSuffix = string.IsNullOrEmpty(label) ? "" : $" · {label}";
-            actorLine = $":bust_in_silhouette: *{ctx.DisplayActor}*{roleSuffix} · _{kind}_";
-        }
-        else if (persona is not null && emoji is not null && label is not null)
-        {
-            actorLine = $"{emoji} *{persona}* · {label} · _{kind}_";
-        }
-        else
-        {
-            // AI actor with no role mapped for this notification type (escalations,
-            // plan events): show the calling actor generically.
-            actorLine = $":robot_face: *{ctx.DisplayActor}* · _{kind}_";
-        }
-
-        // Escalations and failures get a red bar even when no role persona applies, so
-        // the channel reads urgency at a glance.
+        // Escalations and failures get a red bar even with no role persona; anything
+        // else still uncoloured falls back to neutral grey so every task/finding post
+        // is an attachment and the author row can render.
         color ??= notificationType switch
         {
             "task.blocked" or "task.needs_human_review"
                 or "finding.needs_human_review" or "fix.failed" => "#DC2626",
-            _ => null,
+            _ => "#6B7280",
         };
-        return (actorLine, color);
+
+        if (isHuman)
+        {
+            // The person's identity becomes the attachment author row, with their real
+            // GitHub avatar. The in-body actor line is emptied (TidyTemplate drops it).
+            var roleSuffix = string.IsNullOrEmpty(label) ? "" : $" · {label}";
+            var authorName = $"{ctx.DisplayActor}{roleSuffix} · {kind}";
+            string? authorIcon = null, authorLink = null;
+            if (!string.IsNullOrWhiteSpace(ctx.GithubUsername))
+            {
+                var login = Uri.EscapeDataString(ctx.GithubUsername);
+                authorIcon = $"https://github.com/{login}.png?size=64";
+                authorLink = $"https://github.com/{login}";
+            }
+            return new ActorIdentity("", color, authorName, authorIcon, authorLink);
+        }
+
+        // AI actor: keep the role-persona emoji line inline in the body; no avatar.
+        var actorLine = persona is not null && emoji is not null && label is not null
+            ? $"{emoji} *{persona}* · {label} · _{kind}_"
+            : $":robot_face: *{ctx.DisplayActor}* · _{kind}_";
+        return new ActorIdentity(actorLine, color, null, null, null);
     }
 
     private static string? GetStr(JsonElement obj, string prop)
@@ -310,7 +321,8 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     /// <summary>
     /// Remove any token the caller did not supply (so a missing value can never surface
     /// as a literal "{reason}" in the channel) and clean up the dangling separators and
-    /// empty quote lines that leaves behind.
+    /// empty lines that leaves behind — including the blank first line for a human actor,
+    /// whose identity moved to the attachment author row.
     /// </summary>
     private static string TidyTemplate(string s)
     {
@@ -337,4 +349,8 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         }
         return string.Join('\n', kept).Trim();
     }
+
+    /// <summary>The pieces of a notification's actor identity, resolved at enqueue time.</summary>
+    private sealed record ActorIdentity(
+        string ActorLine, string? Color, string? AuthorName, string? AuthorIcon, string? AuthorLink);
 }

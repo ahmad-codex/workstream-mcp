@@ -97,7 +97,8 @@ public sealed class SlackNotifyWorker : BackgroundService
             var body = await UpgradeBoardLinkToItemLinkAsync(row, ct).ConfigureAwait(false);
 
             var token = await _tokens.ResolveAsync(slackCfg.BotTokenSecretRef, ct).ConfigureAwait(false);
-            var result = await _slack.PostMessageAsync(token, row.ChannelId, body, row.ThreadTs, row.Color, ct).ConfigureAwait(false);
+            var result = await _slack.PostMessageAsync(token, row.ChannelId, body, row.ThreadTs, row.Color,
+                row.AuthorName, row.AuthorIcon, row.AuthorLink, ct).ConfigureAwait(false);
             if (!result.Ok)
             {
                 throw new InvalidOperationException($"slack rejected post: {result.Error}");

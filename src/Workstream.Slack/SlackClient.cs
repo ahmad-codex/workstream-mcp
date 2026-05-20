@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -27,38 +28,52 @@ public sealed class SlackClient
     /// <summary>
     /// Post a message. When <paramref name="color"/> is a non-empty hex string the body
     /// is wrapped in a Slack attachment so the message renders with a coloured left bar
-    /// (keyed to the acting role); otherwise it posts as a plain mrkdwn message.
+    /// (keyed to the acting role); otherwise it posts as a plain mrkdwn message. When
+    /// <paramref name="authorName"/> is supplied the attachment also carries an author
+    /// row — for a human actor that is their real GitHub avatar, name, and profile link.
     /// </summary>
-    public async Task<SlackPostResult> PostMessageAsync(string botToken, string channelId, string text, string? threadTs, string? color = null, CancellationToken ct = default)
+    public async Task<SlackPostResult> PostMessageAsync(
+        string botToken, string channelId, string text, string? threadTs,
+        string? color = null, string? authorName = null, string? authorIcon = null, string? authorLink = null,
+        CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "chat.postMessage");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
-        object payload = string.IsNullOrEmpty(color)
-            ? new
+        object payload;
+        if (string.IsNullOrEmpty(color))
+        {
+            payload = new
             {
                 channel = channelId,
                 text,
                 thread_ts = threadTs,
                 unfurl_links = false,
                 unfurl_media = false,
-            }
-            : new
+            };
+        }
+        else
+        {
+            // Build the attachment as a dictionary so the optional author row (a human
+            // actor's GitHub avatar + name + profile link) can be added conditionally.
+            var attachment = new Dictionary<string, object?>
+            {
+                ["color"]     = color,
+                ["text"]      = text,
+                ["mrkdwn_in"] = new[] { "text" },
+                ["fallback"]  = PlainFallback(text),
+            };
+            if (!string.IsNullOrWhiteSpace(authorName)) attachment["author_name"] = authorName;
+            if (!string.IsNullOrWhiteSpace(authorIcon)) attachment["author_icon"] = authorIcon;
+            if (!string.IsNullOrWhiteSpace(authorLink)) attachment["author_link"] = authorLink;
+            payload = new
             {
                 channel = channelId,
-                attachments = new[]
-                {
-                    new
-                    {
-                        color,
-                        text,
-                        mrkdwn_in = new[] { "text" },
-                        fallback = PlainFallback(text),
-                    },
-                },
+                attachments = new[] { attachment },
                 thread_ts = threadTs,
                 unfurl_links = false,
                 unfurl_media = false,
             };
+        }
         req.Content = JsonContent.Create(payload);
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         var content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
