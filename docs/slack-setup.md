@@ -129,6 +129,15 @@ Each plan type's `default_notify_on` array decides which events produce Slack no
 | `plan.activated` | on | on |
 | `plan.completed` | on | on |
 
+## Actor identity (who a post is attributed to)
+
+Every task/finding post carries an identity resolved from the **calling actor's `actor_type`**:
+
+- `human` — the post shows the person's display name, role label, a `Human` tag, and their GitHub avatar (`github.com/<login>.png`) in the attachment author row.
+- `orchestrator` / `subagent` — the post shows the plan-type's role persona for that event (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis; development: Developer, Reviewer), an `AI Agent` tag, and a role-coloured bar.
+
+The persona and colour come from the plan profile's `role_personas`, keyed via `slack_roles` (notification type → role). An AI agent that runs a plan must therefore have its own `orchestrator`/`subagent` workstream user — running it under a human's URL token attributes every automated step to that person instead of the role persona.
+
 ## Threading
 
 Multi-step lifecycles (a task moving through `claimed` → `in_progress` → `review` → `done`) thread under a single parent post. The first message for an entity is the root; subsequent messages reply in the thread. `slack_notify_log.thread_ts` carries the parent slack_ts so threading survives worker restarts.

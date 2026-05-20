@@ -147,22 +147,46 @@ public sealed record CreatePlanInput(
     string? Objective = null,
     Guid?   PrimaryBoardId = null,
     string? PrimarySlackChannelId = null);
-public sealed record CreatePlanOutput(Guid Id, string Status);
+public sealed record CreatePlanOutput(Guid Id, string Status, Guid? PrimaryBoardId = null);
 
 public sealed class CreatePlanTool : McpTool<CreatePlanInput, CreatePlanOutput>
 {
     private readonly IPlanRepository _repo;
-    public CreatePlanTool(IPlanRepository repo) => _repo = repo;
+    private readonly IProjectRepository _projects;
+    public CreatePlanTool(IPlanRepository repo, IProjectRepository projects)
+    {
+        _repo = repo; _projects = projects;
+    }
     public override string Name => "create_plan";
     public override string Description =>
-        "Admin: create a new plan (in draft status). Use activate_plan to move it to active and create the board items.";
+        "Admin: create a new plan (in draft status). When primary_board_id is omitted the plan " +
+        "inherits the project's board automatically if the project has exactly one registered " +
+        "board — this is what makes board sync fire for every task on the plan, including " +
+        "create_tasks bulk inserts. Pass primary_board_id explicitly only when the project has " +
+        "more than one board. The response echoes the resolved primary_board_id; a null value " +
+        "means the plan is NOT board-bound and no cards will appear. Use activate_plan to move " +
+        "the plan to active and enqueue the board items for existing tasks.";
 
     protected override async Task<CreatePlanOutput> RunAsync(CreatePlanInput input, RequestContext ctx, CancellationToken ct)
     {
         AdminGate.Require(ctx);
+
+        // Bind a board so board sync fires for every task on this plan. An explicit
+        // primary_board_id wins; otherwise inherit the project's board when there is
+        // exactly one (the common case — orchestrators call create_plan with no board
+        // and expect cards to appear). With multiple boards we don't guess; the caller
+        // must name one.
+        var boardId = input.PrimaryBoardId;
+        if (boardId is null)
+        {
+            var boards = await _projects.ListBoardsAsync(input.ProjectId, ct).ConfigureAwait(false);
+            if (boards.Count == 1)
+                boardId = boards[0].Id;
+        }
+
         var p = await _repo.CreateAsync(input.ProjectId, input.PlanType, input.Name, input.Objective,
-            ctx.ActorId, input.PrimaryBoardId, input.PrimarySlackChannelId, ct).ConfigureAwait(false);
-        return new CreatePlanOutput(p.Id, p.Status);
+            ctx.ActorId, boardId, input.PrimarySlackChannelId, ct).ConfigureAwait(false);
+        return new CreatePlanOutput(p.Id, p.Status, p.PrimaryBoardId);
     }
 }
 

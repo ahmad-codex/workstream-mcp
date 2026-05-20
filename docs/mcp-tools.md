@@ -61,7 +61,7 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 | `add_project_repo` | Attach a GitHub repo |
 | `add_project_board` | Register a GitHub Projects V2 board (with discovered option ids) |
 | `set_project_slack` | Configure Slack workspace + channel + bot-token secret ref |
-| `create_plan` | New plan (in draft) |
+| `create_plan` | New plan (in draft). Inherits the project's board automatically when the project has exactly one registered; pass `primary_board_id` to disambiguate when there are several. A plan with no board never produces task cards |
 | `add_phase` | Add a phase to a plan |
 | `activate_plan` | Draft → active; enqueues board items for every task |
 
