@@ -24,4 +24,9 @@ SET role_ttls = $${
 }$$::jsonb
 WHERE id = 'audit';
 
+-- The migration runner keys "applied" off this row existing; without it the
+-- runner re-executes 0010 on every startup (harmless but wasteful).
+INSERT INTO __migrations (version) VALUES ('0010_raise_audit_role_ttls')
+ON CONFLICT (version) DO NOTHING;
+
 COMMIT;

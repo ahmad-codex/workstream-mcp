@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
@@ -28,18 +30,24 @@ public sealed class OutboxBoardSyncEnqueue : IBoardSyncEnqueue
 /// Default <see cref="ISlackNotifyEnqueue"/>: formats the body from the plan-type's
 /// <c>slack_templates</c> (config JSON) and writes a row to <c>slack_notify_log</c>. The
 /// <c>Workstream.Slack.SlackNotifyWorker</c> drains and posts.
+///
+/// Every body gets a computed <c>{actor_line}</c> header — the acting role's persona,
+/// role label, and an AI Agent / Human tag — plus an attachment colour keyed to the
+/// role. Task and finding bodies are clickable: tasks deep-link to their bound Project
+/// V2 card, findings deep-link to the parent task's card (findings have no card of
+/// their own). Tokens the caller did not supply are stripped, never left as a literal
+/// <c>{placeholder}</c>.
 /// </summary>
 public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 {
     private readonly IOutboxRepository _outbox;
     private readonly IProjectRepository _projects;
+    private readonly ITaskRepository _tasks;
 
     public OutboxSlackNotifyEnqueue(IOutboxRepository outbox, IProjectRepository projects, ITaskRepository tasks)
     {
         _outbox = outbox; _projects = projects; _tasks = tasks;
     }
-
-    private readonly ITaskRepository _tasks;
 
     public async Task EnqueueForTaskAsync(
         Plan plan, (PlanType Row, StateGraph Graph) pt, WorkTask task,
@@ -50,27 +58,18 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
 
-        // Build the clickable title token. If we have a board AND a per-item databaseId,
-        // deep-link to the project's side-pane view for the exact card. Without an item
-        // number, link to the board page. Without a board, just bold the title.
-        string? boardUrl = null;
-        string? itemUrl  = null;
-        if (plan.PrimaryBoardId is { } boardId)
-        {
-            var board = await _projects.GetBoardAsync(boardId, ct).ConfigureAwait(false);
-            if (board is not null)
-            {
-                boardUrl = $"https://github.com/orgs/{board.GithubOwner}/projects/{board.GithubProjectNumber}";
-                var itemNumber = await _tasks.GetGithubBoardItemNumberAsync(task.Id, ct).ConfigureAwait(false);
-                if (itemNumber is { } n)
-                    itemUrl = $"{boardUrl}/views/1?pane=issue&itemId={n}";
-            }
-        }
+        // Build the clickable title token. With a board AND a per-item databaseId we
+        // deep-link to the project's side-pane view for the exact card; without an item
+        // number we link to the board page; without a board we just bold the title.
+        var (boardUrl, itemUrl) = await ResolveTaskLinkUrlsAsync(plan, task.Id, ct).ConfigureAwait(false);
         var linkUrl = itemUrl ?? boardUrl;
-        var titleLink = linkUrl is null ? $"*{task.Title}*" : $"<{linkUrl}|{task.Title}>";
+        var titleLink = linkUrl is null ? $"*{SlackEscape(task.Title)}*" : $"<{linkUrl}|{SlackEscape(task.Title)}>";
+
+        var (actorLine, color) = ResolveActorIdentity(pt.Row, notificationType, ctx);
 
         var tokens = new Dictionary<string, string>
         {
+            ["actor_line"]       = actorLine,
             ["actor"]            = ctx.DisplayActor,
             ["task_title"]       = task.Title,
             ["task_title_link"]  = titleLink,
@@ -82,23 +81,21 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ["board_url"]        = boardUrl ?? "",
             ["item_url"]         = itemUrl ?? boardUrl ?? "",
         };
-        // Caller-supplied extras override defaults (e.g. commit / reviewer / comments
-        // injected by submit_review_decision for task.done).
+        // Caller-supplied extras override defaults (e.g. commit / reviewer / reason /
+        // finding_count injected by submit_review_decision, submit_findings, mark_task_status).
         if (extraTokens is not null)
             foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
 
         var body = FormatTemplate(pt.Row, notificationType, tokens);
         // Per operator preference, each state change is its own top-level post (no
         // thread reply). The spec's threaded design (§8.4) is preserved as data — the
-        // first slack_ts is still recorded on slack_notify_log — but we no longer
-        // pass thread_ts on subsequent posts. Re-enable by uncommenting the lookup
-        // and assigning to ThreadTs below.
+        // first slack_ts is still recorded on slack_notify_log.
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Task, EntityId = task.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body,
+            Body = body, Color = color,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }
@@ -107,24 +104,47 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
-        // Base tokens are derived from the finding; caller-supplied extras (e.g. {reason})
-        // overlay on top so override_verdict and submit_verification_verdict can both surface
-        // a human-supplied explanation in the channel post.
+
+        // A finding has no board card of its own — deep-link to the parent task's card
+        // so operators can click straight through to where the audit work lives.
+        var task = await _tasks.GetAsync(taskId, ct).ConfigureAwait(false);
+        var (boardUrl, itemUrl) = await ResolveTaskLinkUrlsAsync(plan, taskId, ct).ConfigureAwait(false);
+        var linkUrl = itemUrl ?? boardUrl;
+
+        var taskTitle = task?.Title ?? "the audit task";
+        var taskTitleLink = linkUrl is null ? $"*{SlackEscape(taskTitle)}*" : $"<{linkUrl}|{SlackEscape(taskTitle)}>";
+
+        var summary = ShortSummary(finding.Symptom);
+        var findingLabel = summary.Length == 0 ? finding.ExternalKey : $"{finding.ExternalKey} — {summary}";
+        var findingLink = linkUrl is null ? $"*{SlackEscape(findingLabel)}*" : $"<{linkUrl}|{SlackEscape(findingLabel)}>";
+
+        var (actorLine, color) = ResolveActorIdentity(pt.Row, notificationType, ctx);
+
         var tokens = new Dictionary<string, string>
         {
-            ["actor"]       = ctx.DisplayActor,
-            ["finding_key"] = finding.ExternalKey,
-            ["severity"]    = finding.Severity ?? "unknown",
+            ["actor_line"]      = actorLine,
+            ["actor"]           = ctx.DisplayActor,
+            ["finding_key"]     = finding.ExternalKey,
+            ["finding_summary"] = summary,
+            ["finding_link"]    = findingLink,
+            ["severity"]        = finding.Severity ?? "unknown",
+            ["severity_emoji"]  = SeverityEmoji(finding.Severity),
+            ["task_title"]      = taskTitle,
+            ["task_title_link"] = taskTitleLink,
+            ["task_id"]         = taskId.ToString(),
         };
+        // Caller-supplied extras (reason, attempt, commit) overlay the defaults so the
+        // verdict tools and override_verdict can surface a real explanation.
         if (extraTokens is not null)
             foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
+
         var body = FormatTemplate(pt.Row, notificationType, tokens);
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Finding, EntityId = finding.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body,
+            Body = body, Color = color,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
     }
@@ -156,6 +176,109 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         return slack?.DefaultChannelId;
     }
 
+    /// <summary>
+    /// Resolve the (board-page, per-item pane) URL pair for a task's bound Project V2
+    /// card. Either may be null: no board bound, or the item not created yet.
+    /// </summary>
+    private async Task<(string? BoardUrl, string? ItemUrl)> ResolveTaskLinkUrlsAsync(Plan plan, Guid taskId, CancellationToken ct)
+    {
+        if (plan.PrimaryBoardId is not { } boardId) return (null, null);
+        var board = await _projects.GetBoardAsync(boardId, ct).ConfigureAwait(false);
+        if (board is null) return (null, null);
+        var boardUrl = $"https://github.com/orgs/{board.GithubOwner}/projects/{board.GithubProjectNumber}";
+        var itemNumber = await _tasks.GetGithubBoardItemNumberAsync(taskId, ct).ConfigureAwait(false);
+        var itemUrl = itemNumber is { } n ? $"{boardUrl}/views/1?pane=issue&itemId={n}" : null;
+        return (boardUrl, itemUrl);
+    }
+
+    /// <summary>
+    /// Build the <c>{actor_line}</c> header and the attachment colour for a notification.
+    /// The role is resolved from the plan-type's <c>slack_roles</c> map; the persona,
+    /// emoji and colour from <c>role_personas</c>. Humans always show their real name
+    /// (a task can be handled by a person); AI actors show the role persona.
+    /// </summary>
+    private static (string ActorLine, string? Color) ResolveActorIdentity(
+        PlanType pt, string notificationType, RequestContext ctx)
+    {
+        string? persona = null, label = null, emoji = null, color = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(pt.ConfigJson);
+            var root = doc.RootElement;
+            string? role = null;
+            if (root.TryGetProperty("slack_roles", out var roles) && roles.ValueKind == JsonValueKind.Object
+                && roles.TryGetProperty(notificationType, out var roleEl) && roleEl.ValueKind == JsonValueKind.String)
+            {
+                role = roleEl.GetString();
+            }
+            if (role is not null
+                && root.TryGetProperty("role_personas", out var personas) && personas.ValueKind == JsonValueKind.Object
+                && personas.TryGetProperty(role, out var p) && p.ValueKind == JsonValueKind.Object)
+            {
+                persona = GetStr(p, "persona");
+                label   = GetStr(p, "label");
+                emoji   = GetStr(p, "emoji");
+                color   = GetStr(p, "color");
+            }
+        }
+        catch (JsonException) { /* fall through to a generic line */ }
+
+        var isHuman = string.Equals(ctx.ActorType, "human", StringComparison.OrdinalIgnoreCase);
+        var kind = isHuman ? "Human" : "AI Agent";
+
+        string actorLine;
+        if (isHuman)
+        {
+            // A person always shows their real name; the role label is informative context.
+            var roleSuffix = string.IsNullOrEmpty(label) ? "" : $" · {label}";
+            actorLine = $":bust_in_silhouette: *{ctx.DisplayActor}*{roleSuffix} · _{kind}_";
+        }
+        else if (persona is not null && emoji is not null && label is not null)
+        {
+            actorLine = $"{emoji} *{persona}* · {label} · _{kind}_";
+        }
+        else
+        {
+            // AI actor with no role mapped for this notification type (escalations,
+            // plan events): show the calling actor generically.
+            actorLine = $":robot_face: *{ctx.DisplayActor}* · _{kind}_";
+        }
+
+        // Escalations and failures get a red bar even when no role persona applies, so
+        // the channel reads urgency at a glance.
+        color ??= notificationType switch
+        {
+            "task.blocked" or "task.needs_human_review"
+                or "finding.needs_human_review" or "fix.failed" => "#DC2626",
+            _ => null,
+        };
+        return (actorLine, color);
+    }
+
+    private static string? GetStr(JsonElement obj, string prop)
+        => obj.TryGetProperty(prop, out var el) && el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+
+    private static string SeverityEmoji(string? severity) => (severity ?? "").ToLowerInvariant() switch
+    {
+        "critical" => ":red_circle:",
+        "high"     => ":large_orange_circle:",
+        "medium"   => ":large_yellow_circle:",
+        "low"      => ":white_circle:",
+        _          => ":red_circle:",
+    };
+
+    /// <summary>Collapse a finding symptom to a single short line for a Slack link label.</summary>
+    private static string ShortSummary(string? text, int max = 90)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        var s = Regex.Replace(text.Trim(), @"\s+", " ");
+        return s.Length <= max ? s : s[..(max - 1)].TrimEnd() + "…";
+    }
+
+    /// <summary>Escape characters that would break Slack mrkdwn link syntax (&lt;url|text&gt;).</summary>
+    private static string SlackEscape(string s)
+        => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("|", "∣");
+
     private static string FormatTemplate(PlanType pt, string notificationType, IReadOnlyDictionary<string, string> tokens)
     {
         try
@@ -181,6 +304,37 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var sb = new StringBuilder(template);
         foreach (var kv in tokens)
             sb.Replace("{" + kv.Key + "}", kv.Value);
-        return sb.ToString();
+        return TidyTemplate(sb.ToString());
+    }
+
+    /// <summary>
+    /// Remove any token the caller did not supply (so a missing value can never surface
+    /// as a literal "{reason}" in the channel) and clean up the dangling separators and
+    /// empty quote lines that leaves behind.
+    /// </summary>
+    private static string TidyTemplate(string s)
+    {
+        // Drop unsubstituted {tokens}.
+        s = Regex.Replace(s, @"\{[a-zA-Z_][a-zA-Z0-9_]*\}", "");
+
+        var lines = s.Split('\n');
+        var kept = new List<string>(lines.Length);
+        foreach (var raw in lines)
+        {
+            var line = raw;
+            // Strip trailing dangling separators / empty labels (e.g. "— reason: ").
+            for (var i = 0; i < 4; i++)
+            {
+                var trimmed = Regex.Replace(line, @"\s*(—|·|reason:|attempt|commit `?`?)\s*$", "",
+                    RegexOptions.IgnoreCase);
+                if (trimmed == line) break;
+                line = trimmed;
+            }
+            // Drop a quote line that lost all of its content.
+            if (Regex.IsMatch(line, @"^\s*>\s*(reason:)?\s*$", RegexOptions.IgnoreCase))
+                continue;
+            kept.Add(line.TrimEnd());
+        }
+        return string.Join('\n', kept).Trim();
     }
 }

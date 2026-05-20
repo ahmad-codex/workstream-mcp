@@ -245,6 +245,57 @@ public sealed class ProjectsV2Client
         return dict;
     }
 
+    /// <summary>
+    /// Replace the body (description) of a Projects V2 draft issue. Used to keep a live
+    /// "audit ledger" on the task's card — the finding-by-finding lifecycle that never
+    /// moves the card between columns. <paramref name="draftIssueNodeId"/> is the inner
+    /// DraftIssue id — resolve via <see cref="LookupDraftIssueIdAsync"/>.
+    /// </summary>
+    public async Task UpdateDraftIssueBodyAsync(string draftIssueNodeId, string body, CancellationToken ct = default)
+    {
+        const string query = """
+            mutation($draftIssueId: ID!, $body: String!) {
+              updateProjectV2DraftIssue(input: { draftIssueId: $draftIssueId, body: $body }) {
+                draftIssue { id }
+              }
+            }
+            """;
+        await SendAsync(query, new { draftIssueId = draftIssueNodeId, body }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Look up a single-select field on a project by name (e.g. "Audit Stage"). Returns
+    /// the field node id and its option name→id map, or null when the project has no
+    /// such field — callers treat a missing field as "feature not configured" and skip
+    /// it, so the board can opt in just by adding the field in GitHub.
+    /// </summary>
+    public async Task<SingleSelectFieldInfo?> GetSingleSelectFieldAsync(string projectNodeId, string fieldName, CancellationToken ct = default)
+    {
+        const string query = """
+            query($projectId: ID!, $fieldName: String!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  field(name: $fieldName) {
+                    ... on ProjectV2SingleSelectField { id name options { id name } }
+                  }
+                }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { projectId = projectNodeId, fieldName }, ct).ConfigureAwait(false);
+        var node = resp.RootElement.GetProperty("data").GetProperty("node");
+        if (node.ValueKind != JsonValueKind.Object) return null;
+        if (!node.TryGetProperty("field", out var field) || field.ValueKind != JsonValueKind.Object) return null;
+        if (!field.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String) return null;
+        var options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (field.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var opt in opts.EnumerateArray())
+                options[opt.GetProperty("name").GetString()!] = opt.GetProperty("id").GetString()!;
+        }
+        return new SingleSelectFieldInfo(idEl.GetString()!, options);
+    }
+
     private async Task<JsonDocument> SendAsync(string query, object variables, CancellationToken ct)
     {
         var token = await _auth.GetInstallationTokenAsync(ct).ConfigureAwait(false);
@@ -275,3 +326,8 @@ public sealed record BoardDiscoveryResult(
     IReadOnlyDictionary<string, string> StatusOptions);
 
 public sealed record DraftItemResult(string NodeId, long DatabaseId);
+
+/// <summary>A Projects V2 single-select field: its node id and option name→id map.</summary>
+public sealed record SingleSelectFieldInfo(
+    string FieldId,
+    IReadOnlyDictionary<string, string> Options);

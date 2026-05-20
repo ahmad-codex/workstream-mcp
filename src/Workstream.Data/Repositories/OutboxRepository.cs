@@ -94,9 +94,9 @@ public sealed class OutboxRepository : IOutboxRepository
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
             INSERT INTO slack_notify_log (
-                event_id, project_id, plan_id, entity_type, entity_id, channel_id, notification_type, body, thread_ts
+                event_id, project_id, plan_id, entity_type, entity_id, channel_id, notification_type, body, color, thread_ts
             )
-            VALUES (@EventId, @ProjectId, @PlanId, @EntityType, @EntityId, @ChannelId, @NotificationType, @Body, @ThreadTs)
+            VALUES (@EventId, @ProjectId, @PlanId, @EntityType, @EntityId, @ChannelId, @NotificationType, @Body, @Color, @ThreadTs)
             RETURNING id
             """, row, cancellationToken: ct)).ConfigureAwait(false);
     }
@@ -125,6 +125,7 @@ public sealed class OutboxRepository : IOutboxRepository
                       s.channel_id      AS ChannelId,
                       s.notification_type AS NotificationType,
                       s.body            AS Body,
+                      s.color           AS Color,
                       s.thread_ts       AS ThreadTs,
                       s.slack_ts        AS SlackTs,
                       s.attempts        AS Attempts,

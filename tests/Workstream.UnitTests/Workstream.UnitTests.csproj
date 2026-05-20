@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Workstream.Core\Workstream.Core.csproj" />
+    <ProjectReference Include="..\..\src\Workstream.GitHub\Workstream.GitHub.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,18 +24,42 @@ public sealed class SlackClient
         if (_http.BaseAddress is null) _http.BaseAddress = new Uri("https://slack.com/api/");
     }
 
-    public async Task<SlackPostResult> PostMessageAsync(string botToken, string channelId, string text, string? threadTs, CancellationToken ct = default)
+    /// <summary>
+    /// Post a message. When <paramref name="color"/> is a non-empty hex string the body
+    /// is wrapped in a Slack attachment so the message renders with a coloured left bar
+    /// (keyed to the acting role); otherwise it posts as a plain mrkdwn message.
+    /// </summary>
+    public async Task<SlackPostResult> PostMessageAsync(string botToken, string channelId, string text, string? threadTs, string? color = null, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "chat.postMessage");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
-        req.Content = JsonContent.Create(new
-        {
-            channel = channelId,
-            text,
-            thread_ts = threadTs,
-            unfurl_links = false,
-            unfurl_media = false,
-        });
+        object payload = string.IsNullOrEmpty(color)
+            ? new
+            {
+                channel = channelId,
+                text,
+                thread_ts = threadTs,
+                unfurl_links = false,
+                unfurl_media = false,
+            }
+            : new
+            {
+                channel = channelId,
+                attachments = new[]
+                {
+                    new
+                    {
+                        color,
+                        text,
+                        mrkdwn_in = new[] { "text" },
+                        fallback = PlainFallback(text),
+                    },
+                },
+                thread_ts = threadTs,
+                unfurl_links = false,
+                unfurl_media = false,
+            };
+        req.Content = JsonContent.Create(payload);
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         var content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
@@ -49,6 +74,13 @@ public sealed class SlackClient
         var ts = doc.RootElement.TryGetProperty("ts", out var t) ? t.GetString() : null;
         return new SlackPostResult(true, ts, null);
     }
+
+    /// <summary>
+    /// Plain-text fallback for an attachment (shown in notifications and older clients):
+    /// collapse mrkdwn links &lt;url|label&gt; to just the label.
+    /// </summary>
+    private static string PlainFallback(string text)
+        => Regex.Replace(text, @"<[^|>]+\|([^>]+)>", "$1");
 }
 
 public sealed record SlackPostResult(bool Ok, string? Ts, string? Error);

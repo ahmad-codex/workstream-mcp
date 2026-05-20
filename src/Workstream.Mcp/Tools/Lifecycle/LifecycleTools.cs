@@ -73,9 +73,17 @@ public sealed class MarkTaskStatusTool : McpTool<MarkTaskStatusInput, MarkTaskSt
             var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
             if (pt is not null)
             {
-                var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
+                // needs_human_review gets its own template; everything else (blocked /
+                // deferred / skipped / out_of_scope) uses the blocked template.
+                var slackType = updated.Status == TaskStatus.NeedsHumanReview
+                    ? "task.needs_human_review"
+                    : "task.blocked";
+                var extras = new Dictionary<string, string>
+                {
+                    ["reason"] = Workstream.Mcp.Tools.Submission.NotificationHelpers.TruncateReason(input.Reason),
+                };
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
-                    _board, _slack, _plans, plan, pt.Value, updated, "task.blocked", ctx, ct, extras, notifySlack: true)
+                    _board, _slack, _plans, plan, pt.Value, updated, slackType, ctx, ct, extras, notifySlack: true)
                     .ConfigureAwait(false);
             }
         }
@@ -413,7 +421,10 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
             var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
             if (pt is not null)
             {
-                var extras = new Dictionary<string, string> { ["reason"] = input.Reason };
+                var extras = new Dictionary<string, string>
+                {
+                    ["reason"] = Workstream.Mcp.Tools.Submission.NotificationHelpers.TruncateReason(input.Reason),
+                };
                 await Workstream.Mcp.Tools.Submission.NotificationHelpers.EnqueueBoardAndSlackAsync(
                     _board, _slack, _plans, plan, pt.Value, updated, slackType, ctx, ct, extras, notifySlack: true)
                     .ConfigureAwait(false);
@@ -444,13 +455,16 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
                     var slackType = MapFindingStatusToNotificationType(updated.Status);
                     var extras = new Dictionary<string, string>
                     {
-                        ["reason"] = input.Reason,
+                        ["reason"] = Workstream.Mcp.Tools.Submission.NotificationHelpers.TruncateReason(input.Reason),
                         ["finding_key"] = updated.ExternalKey,
                         ["severity"] = updated.Severity ?? "unknown",
                     };
                     await Workstream.Mcp.Tools.Submission.NotificationHelpers
                         .EnqueueFindingSlackAsync(_slack, _plans, plan, pt.Value, updated, updated.TaskId, slackType, ctx, ct, extras)
                         .ConfigureAwait(false);
+                    // Refresh the parent task card so the audit ledger reflects the override.
+                    await Workstream.Mcp.Tools.Submission.NotificationHelpers
+                        .EnqueueBoardRefreshAsync(_board, plan, pt.Value, task, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -465,16 +479,20 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
         TaskStatus.Done             => "task.done",
         TaskStatus.Pending          => "task.created",
         TaskStatus.Claimed          => "task.claimed",
-        _                           => "task.blocked",   // deferred / blocked / skipped / out_of_scope / needs_human_review
+        TaskStatus.NeedsHumanReview => "task.needs_human_review",
+        _                           => "task.blocked",   // deferred / blocked / skipped / out_of_scope
     };
 
     private static string MapFindingStatusToNotificationType(string status) => status switch
     {
         "confirmed"           => "finding.confirmed",
         "rejected"            => "finding.rejected",
+        "ambiguous"           => "finding.ambiguous",
         "fixed"               => "fix.confirmed",
         "fix_failed"          => "fix.failed",
-        "needs_human_review"  => "finding.rejected",   // closest template; reason carries the detail
+        "partial"             => "fix.partial",
+        "needs_human_review"  => "finding.needs_human_review",
+        "deferred"            => "finding.deferred",
         _                     => "finding.confirmed",
     };
 }

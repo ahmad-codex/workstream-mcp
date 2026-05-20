@@ -47,6 +47,9 @@ public sealed record SlackNotifyRow
     public string  ChannelId        { get; init; } = "";
     public string  NotificationType { get; init; } = "";
     public string  Body             { get; init; } = "";
+    // Attachment colour bar (hex, e.g. "#7C3AED"). NULL => post as a plain message.
+    // Resolved at enqueue time from the plan-type's role_personas.
+    public string? Color            { get; init; }
     public string? ThreadTs         { get; init; }
     public string? SlackTs          { get; init; }
     public int     Attempts         { get; init; }

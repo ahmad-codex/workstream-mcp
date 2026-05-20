@@ -135,8 +135,13 @@ public sealed class SubmitFindingsTool : McpTool<SubmitFindingsInput, SubmitFind
             eventPayloadJson: JsonSerializer.Serialize(new { count = input.Findings.Count }), ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
+        var findingsExtras = new Dictionary<string, string>
+        {
+            ["finding_count"] = input.Findings.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
         await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated,
-            updated.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct, notifySlack: true).ConfigureAwait(false);
+            updated.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct,
+            extraTokens: findingsExtras, notifySlack: true).ConfigureAwait(false);
 
         return new SubmitFindingsOutput(updated.Status, inserted.Select(f => f.Id).ToList());
     }
@@ -158,13 +163,14 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
     private readonly IPlanTypeCache _planTypes;
     private readonly StateMachineService _sm;
     private readonly Notifications.ISlackNotifyEnqueue _slack;
+    private readonly Notifications.IBoardSyncEnqueue _boardSync;
 
     public SubmitVerificationVerdictTool(IFindingRepository findings, IVerdictRepository verdicts,
         ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes,
-        StateMachineService sm, Notifications.ISlackNotifyEnqueue slack)
+        StateMachineService sm, Notifications.ISlackNotifyEnqueue slack, Notifications.IBoardSyncEnqueue boardSync)
     {
         _findings = findings; _verdicts = verdicts; _tasks = tasks; _plans = plans; _planTypes = planTypes;
-        _sm = sm; _slack = slack;
+        _sm = sm; _slack = slack; _boardSync = boardSync;
     }
 
     public override string Name => "submit_verification_verdict";
@@ -210,8 +216,22 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
             ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
+        // One notification type per verdict — an ambiguous verdict is no longer
+        // mislabelled "rejected". The verifier's reason_category surfaces as {reason}.
+        var verdictSlackType = input.Verdict switch
+        {
+            VerdictType.Confirmed => "finding.confirmed",
+            VerdictType.Rejected  => "finding.rejected",
+            VerdictType.Ambiguous => "finding.ambiguous",
+            _                     => "finding.rejected",
+        };
+        var verdictExtras = new Dictionary<string, string>();
+        var verdictReason = NotificationHelpers.HumanizeReason(input.Evidence?.ReasonCategory);
+        if (verdictReason is not null) verdictExtras["reason"] = verdictReason;
         await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt, updated, task.Id,
-            input.Verdict == VerdictType.Confirmed ? "finding.confirmed" : "finding.rejected", ctx, ct).ConfigureAwait(false);
+            verdictSlackType, ctx, ct, verdictExtras.Count > 0 ? verdictExtras : null).ConfigureAwait(false);
+        // Refresh the parent task card so the audit ledger reflects this verdict.
+        await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
 
         return new SubmitVerificationVerdictOutput(updated.Id, updated.Status, verdict.Id);
     }
@@ -321,6 +341,8 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             eventPayloadJson: JsonSerializer.Serialize(new { attempt_id = attempt.Id, attempt_number = attempt.AttemptNumber }),
             ct).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
+        // Refresh the parent task card so the audit ledger shows the fix attempt.
+        await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
     }
 }
@@ -347,13 +369,14 @@ public sealed class SubmitAttemptVerdictTool : McpTool<SubmitAttemptVerdictInput
     private readonly IPlanTypeCache _planTypes;
     private readonly StateMachineService _sm;
     private readonly Notifications.ISlackNotifyEnqueue _slack;
+    private readonly Notifications.IBoardSyncEnqueue _boardSync;
 
     public SubmitAttemptVerdictTool(IAttemptRepository attempts, IVerdictRepository verdicts,
         IFindingRepository findings, ITaskRepository tasks, IPlanRepository plans, IPlanTypeCache planTypes,
-        StateMachineService sm, Notifications.ISlackNotifyEnqueue slack)
+        StateMachineService sm, Notifications.ISlackNotifyEnqueue slack, Notifications.IBoardSyncEnqueue boardSync)
     {
         _attempts = attempts; _verdicts = verdicts; _findings = findings; _tasks = tasks; _plans = plans; _planTypes = planTypes;
-        _sm = sm; _slack = slack;
+        _sm = sm; _slack = slack; _boardSync = boardSync;
     }
 
     public override string Name => "submit_attempt_verdict";
@@ -413,9 +436,21 @@ public sealed class SubmitAttemptVerdictTool : McpTool<SubmitAttemptVerdictInput
         {
             VerdictType.FixConfirmed => "fix.confirmed",
             VerdictType.FixFailed    => "fix.failed",
-            _ => "task.in_progress",  // partial — keep visibility
+            VerdictType.Partial      => "fix.partial",
+            _                        => "fix.failed",
         };
-        await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt, finding with { Status = targetStatus }, task.Id, slackType, ctx, ct).ConfigureAwait(false);
+        var fixExtras = new Dictionary<string, string>
+        {
+            ["attempt"] = $"{attemptCount}/{pt.Row.RetryCap}",
+        };
+        if (commitRecorded is { Length: > 0 })
+            fixExtras["commit"] = NotificationHelpers.ShortHash(commitRecorded);
+        var fixReason = NotificationHelpers.HumanizeReason(input.Evidence?.ReasonCategory);
+        if (fixReason is not null) fixExtras["reason"] = fixReason;
+        await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt,
+            finding with { Status = targetStatus }, task.Id, slackType, ctx, ct, fixExtras).ConfigureAwait(false);
+        // Refresh the parent task card so the audit ledger reflects this fix verdict.
+        await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
 
         return new SubmitAttemptVerdictOutput(finding.Id, targetStatus, verdict.Id, commitRecorded);
     }
@@ -681,6 +716,25 @@ internal static class NotificationHelpers
             await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Enqueue a board-sync row for a task with no Slack post. Called after a finding,
+    /// attempt, or verdict mutation so the BoardSyncWorker re-renders the parent task
+    /// card's audit ledger and Audit Stage field. No-op when the plan has no bound board.
+    /// </summary>
+    public static async Task EnqueueBoardRefreshAsync(
+        Notifications.IBoardSyncEnqueue boardSync,
+        Plan plan,
+        (PlanType Row, StateGraph Graph) pt,
+        WorkTask task,
+        CancellationToken ct)
+    {
+        if (plan.PrimaryBoardId is { } boardId)
+        {
+            var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
+            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, ct: ct).ConfigureAwait(false);
+        }
+    }
+
     public static async Task EnqueueFindingSlackAsync(
         Notifications.ISlackNotifyEnqueue slack,
         IPlanRepository plans,
@@ -695,4 +749,29 @@ internal static class NotificationHelpers
     {
         await slack.EnqueueForFindingAsync(plan, pt, finding, taskId, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Turn a verdict reason_category code ("not-reproducible") into channel-friendly
+    /// prose ("not reproducible"). Returns null when no category was supplied.
+    /// </summary>
+    public static string? HumanizeReason(string? reasonCategory)
+    {
+        if (string.IsNullOrWhiteSpace(reasonCategory)) return null;
+        return reasonCategory.Trim().Replace('-', ' ').Replace('_', ' ');
+    }
+
+    /// <summary>
+    /// Cap a free-text reason to one short line for a Slack post. The full text still
+    /// lives in the event log and the board card's audit ledger — Slack stays scannable.
+    /// </summary>
+    public static string TruncateReason(string? reason, int max = 180)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return "";
+        var s = System.Text.RegularExpressions.Regex.Replace(reason.Trim(), @"\s+", " ");
+        return s.Length <= max ? s : s[..(max - 1)].TrimEnd() + "…";
+    }
+
+    /// <summary>Abbreviate a commit hash for display.</summary>
+    public static string ShortHash(string? hash)
+        => string.IsNullOrWhiteSpace(hash) ? "" : (hash!.Length <= 10 ? hash : hash[..10]);
 }
