@@ -187,3 +187,60 @@ public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
         return new ExportPlanOutput("markdown", sb.ToString());
     }
 }
+
+// ============================================================================
+// get_finding
+// ============================================================================
+
+public sealed record GetFindingInput(Guid FindingId);
+
+public sealed record GetFindingOutput(
+    Guid    Id,
+    Guid    TaskId,
+    string  ExternalKey,
+    string? Severity,
+    string? InvariantImpact,
+    string? Symptom,
+    string? RootCause,
+    string? ReproSteps,
+    string? AdversarialInput,
+    string? Expected,
+    string? Actual,
+    string? ReferenceComparison,
+    string  Status,
+    Guid?           ClaimActorId,
+    string?         ClaimRole,
+    DateTimeOffset? ClaimedUntil,
+    DateTimeOffset  CreatedAt,
+    DateTimeOffset  UpdatedAt);
+
+public sealed class GetFindingTool : McpTool<GetFindingInput, GetFindingOutput>
+{
+    private readonly IFindingRepository _findings;
+
+    public GetFindingTool(IFindingRepository findings) => _findings = findings;
+
+    public override string Name => "get_finding";
+    public override string Description =>
+        "Retrieve the full body of a single finding by id: severity, invariant impact, symptom, " +
+        "root cause, reproduction steps, adversarial input, expected vs actual, reference comparison, " +
+        "status, and claim holder. claim_next_finding_for_verification and claim_next_finding_for_fix " +
+        "return only the finding id, task id, status, and severity — call get_finding to fetch the " +
+        "auditor-authored body a verifier or fixer subagent needs to reproduce the issue. No claim is " +
+        "required: this is a plain read, so an orchestrator that did not author the findings in the " +
+        "current session (or resumed after a restart) can still recover them. Returns the structured " +
+        "not_found error if the id is unknown. The live claim token is deliberately not returned — use " +
+        "a claim tool to take the finding.";
+
+    protected override async Task<GetFindingOutput> RunAsync(GetFindingInput input, RequestContext ctx, CancellationToken ct)
+    {
+        var f = await _findings.GetAsync(input.FindingId, ct).ConfigureAwait(false)
+                ?? throw new WorkstreamException(WorkstreamError.NotFound("finding"));
+        return new GetFindingOutput(
+            f.Id, f.TaskId, f.ExternalKey, f.Severity, f.InvariantImpact,
+            f.Symptom, f.RootCause, f.ReproSteps, f.AdversarialInput,
+            f.Expected, f.Actual, f.ReferenceComparison, f.Status,
+            f.Claim.ActorId, f.Claim.Role, f.Claim.ClaimedUntil,
+            f.CreatedAt, f.UpdatedAt);
+    }
+}

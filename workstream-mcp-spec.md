@@ -597,6 +597,8 @@ Each submission tool atomically: validates the claim token, validates the state 
 
 **`get_event_log(entity_type, entity_id, since?, limit?)`** → list of events for forensic queries. Used for "show me why this task ended up in needs_human_review" investigations.
 
+**`get_finding(finding_id)`** → the full finding body: severity, invariant impact, symptom, root cause, repro steps, adversarial input, expected/actual, reference comparison, status, and claim holder. The claim tools (`claim_next_finding_for_verification`, `claim_next_finding_for_fix`) return only id/task/status/severity; `get_finding` is how a verifier or fixer recovers the auditor-authored detail it needs to reproduce the issue, including across sessions or after an orchestrator restart. Plain read — no claim required. Returns `not_found` for an unknown id. The live claim token is not returned; use a claim tool to take the finding.
+
 **`get_stuck_work(plan_id?)`** → tasks, findings, attempts past their TTL or stalled in non-terminal states beyond a threshold. Same data as the hourly stuck-work job but on-demand.
 
 ### 9.6 Plan and project setup

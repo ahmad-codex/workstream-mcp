@@ -43,6 +43,7 @@ public static class McpToolRegistration
 
         // Forensic
         services.AddSingleton<IMcpTool, Tools.Forensic.GetEventLogTool>();
+        services.AddSingleton<IMcpTool, Tools.Forensic.GetFindingTool>();
         services.AddSingleton<IMcpTool, Tools.Forensic.GetStuckWorkTool>();
         services.AddSingleton<IMcpTool, Tools.Forensic.ExportPlanTool>();
 
