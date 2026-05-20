@@ -52,8 +52,8 @@
     }
   },
   "role_personas": {
-    "developer": { "persona": "Developer", "label": "Developer", "emoji": ":black_small_square:", "color": "#2563EB" },
-    "reviewer":  { "persona": "Reviewer",  "label": "Reviewer",  "emoji": ":black_small_square:", "color": "#7C3AED" }
+    "developer": { "label": "Developer", "emoji": ":black_small_square:", "color": "#2563EB", "personas": ["Reyes","Adler","Cohen","Diaz","Engel","Frey","Gould","Hart","Iqbal","Joshi","Kerr","Lamb"] },
+    "reviewer":  { "label": "Reviewer",  "emoji": ":black_small_square:", "color": "#7C3AED", "personas": ["Mann","Novak","Ortiz","Park","Roth","Sato","Tran","Voss","Ward","Yates","Zane","Bell"] }
   },
   "slack_roles": {
     "task.created":     "developer",

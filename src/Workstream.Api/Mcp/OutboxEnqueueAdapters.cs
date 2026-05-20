@@ -66,7 +66,9 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var linkUrl = itemUrl ?? boardUrl;
         var titleLink = linkUrl is null ? $"*{SlackEscape(task.Title)}*" : $"<{linkUrl}|{SlackEscape(task.Title)}>";
 
-        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx);
+        // Persona name keyed by the task id so every post for this task shows the
+        // same agent name while parallel tasks read as different agents.
+        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx, task.Id);
 
         var tokens = new Dictionary<string, string>
         {
@@ -120,7 +122,9 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         var findingLabel = summary.Length == 0 ? finding.ExternalKey : $"{finding.ExternalKey} — {summary}";
         var findingLink = linkUrl is null ? $"*{SlackEscape(findingLabel)}*" : $"<{linkUrl}|{SlackEscape(findingLabel)}>";
 
-        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx);
+        // Persona name keyed by the finding id — each finding's verifier / fixer /
+        // fix-verifier reads as its own agent across parallel findings.
+        var identity = ResolveActorIdentity(pt.Row, notificationType, ctx, finding.Id);
 
         var tokens = new Dictionary<string, string>
         {
@@ -208,7 +212,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     /// author row (the personas are not GitHub accounts).
     /// </summary>
     private static ActorIdentity ResolveActorIdentity(
-        PlanType pt, string notificationType, RequestContext ctx)
+        PlanType pt, string notificationType, RequestContext ctx, Guid personaKey)
     {
         string? persona = null, label = null, emoji = null, color = null;
         // An explicit as_agent role wins; otherwise derive the role from the
@@ -228,7 +232,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
                 && root.TryGetProperty("role_personas", out var personas) && personas.ValueKind == JsonValueKind.Object
                 && personas.TryGetProperty(role, out var p) && p.ValueKind == JsonValueKind.Object)
             {
-                persona = GetStr(p, "persona");
+                persona = PickPersona(p, personaKey);
                 label   = GetStr(p, "label");
                 emoji   = GetStr(p, "emoji");
                 color   = GetStr(p, "color");
@@ -277,6 +281,31 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 
     private static string? GetStr(JsonElement obj, string prop)
         => obj.TryGetProperty(prop, out var el) && el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+
+    /// <summary>
+    /// Pick the persona name for a role. When the role carries a <c>personas</c> name
+    /// pool, the name is chosen deterministically from <paramref name="key"/> (the work
+    /// item's id) — so every post for the same task/finding shows the same name, while
+    /// parallel work items land on different names and read as distinct agents. Falls
+    /// back to a single <c>persona</c> string for backward compatibility.
+    /// </summary>
+    private static string? PickPersona(JsonElement roleObj, Guid key)
+    {
+        if (roleObj.TryGetProperty("personas", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            var names = new List<string>();
+            foreach (var el in arr.EnumerateArray())
+                if (el.ValueKind == JsonValueKind.String && el.GetString() is { Length: > 0 } s)
+                    names.Add(s);
+            if (names.Count > 0)
+            {
+                // Stable, process-independent hash of the guid (first 4 bytes).
+                var h = BitConverter.ToUInt32(key.ToByteArray(), 0);
+                return names[(int)(h % (uint)names.Count)];
+            }
+        }
+        return GetStr(roleObj, "persona");
+    }
 
     private static string SeverityEmoji(string? severity) => (severity ?? "").ToLowerInvariant() switch
     {

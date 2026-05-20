@@ -75,10 +75,10 @@
     }
   },
   "role_personas": {
-    "auditor":      { "persona": "Smith", "label": "Auditor",      "emoji": ":black_small_square:", "color": "#2563EB" },
-    "verifier":     { "persona": "Jones", "label": "Verifier",     "emoji": ":black_small_square:", "color": "#7C3AED" },
-    "fixer":        { "persona": "Brown", "label": "Fixer",        "emoji": ":black_small_square:", "color": "#EA580C" },
-    "fix_verifier": { "persona": "Davis", "label": "Fix-Verifier", "emoji": ":black_small_square:", "color": "#16A34A" }
+    "auditor":      { "label": "Auditor",      "emoji": ":black_small_square:", "color": "#2563EB", "personas": ["Smith","Carter","Reed","Pope","Hayes","Lane","Ford","Webb","Knox","Pratt","Shaw","Boyd"] },
+    "verifier":     { "label": "Verifier",     "emoji": ":black_small_square:", "color": "#7C3AED", "personas": ["Jones","Hale","Vance","Quinn","Frost","Dean","Marsh","Lowe","Page","Cross","Tate","Nash"] },
+    "fixer":        { "label": "Fixer",        "emoji": ":black_small_square:", "color": "#EA580C", "personas": ["Brown","Wells","Banks","Cole","Hunt","Rhodes","Stark","Flynn","Burke","Sloan","Gray","Doyle"] },
+    "fix_verifier": { "label": "Fix-Verifier", "emoji": ":black_small_square:", "color": "#16A34A", "personas": ["Davis","Mercer","Wolfe","Booth","Greer","Bishop","Chase","York","Wade","Finch","Nolan","Pierce"] }
   },
   "slack_roles": {
     "task.claimed":      "auditor",

@@ -62,7 +62,7 @@ If the developer's Claude session dies anywhere between steps 4 and 6, the claim
 
 ## Audit flow (same surface, different roles)
 
-An orchestrator agent runs against the same URL pattern. Because one URL token can be shared between a human operator and their automated runs, each tool call that posts to Slack may carry an optional `as_agent` field naming the role it acts for (`"auditor"`, `"verifier"`, `"fixer"`, `"fix_verifier"`). The server then renders that role's persona (audit: Auditor → Smith, Verifier → Jones, Fixer → Brown, Fix-Verifier → Davis) instead of the token owner's name and avatar. Omit `as_agent` for genuine manual actions so they stay attributed to the person. It calls:
+An orchestrator agent runs against the same URL pattern. Because one URL token can be shared between a human operator and their automated runs, each tool call that posts to Slack may carry an optional `as_agent` field naming the role it acts for (`"auditor"`, `"verifier"`, `"fixer"`, `"fix_verifier"`). The server then renders that role's persona — the role label plus an agent name drawn from a per-role pool (stable per task/finding, so parallel agents in the same role read as distinct) — instead of the token owner's name and avatar. Omit `as_agent` for genuine manual actions so they stay attributed to the person. It calls:
 
 - `claim_next_task(plan_id, "auditor")` to start auditing a feature.
 - `submit_findings(claim_token, [...])` to record findings.
