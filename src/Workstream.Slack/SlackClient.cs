@@ -27,12 +27,13 @@ public sealed class SlackClient
 
     /// <summary>
     /// Post a message. When <paramref name="blocksJson"/> (a Block Kit <c>blocks</c>
-    /// array) or <paramref name="color"/> is supplied the message is wrapped in a Slack
-    /// attachment so it renders with a coloured left bar keyed to the acting role; with
-    /// blocks the rich layout renders inside the attachment and <paramref name="text"/>
-    /// becomes the notification fallback. Otherwise it posts as a plain mrkdwn message.
-    /// When <paramref name="authorName"/> is supplied the attachment also carries an
-    /// author row — for a human actor that is their real GitHub avatar, name, and link.
+    /// array) is supplied the rich layout posts as top-level <c>blocks</c> and
+    /// <paramref name="text"/> rides along as the notification fallback — blocks must be
+    /// top-level because an interactive block (a button) is rejected inside a secondary
+    /// attachment (<c>invalid_attachments</c>). Otherwise, when <paramref name="color"/>
+    /// is set the message posts as a colour-barred attachment, and the
+    /// <paramref name="authorName"/> row carries a human actor's GitHub avatar; with no
+    /// colour it posts as a plain mrkdwn message.
     /// </summary>
     public async Task<SlackPostResult> PostMessageAsync(
         string botToken, string channelId, string text, string? threadTs,
@@ -44,7 +45,20 @@ public sealed class SlackClient
         // The blocks document must outlive JsonContent's lazy serialization in SendAsync.
         JsonDocument? blocksDoc = null;
         object payload;
-        if (string.IsNullOrEmpty(color) && string.IsNullOrEmpty(blocksJson))
+        if (!string.IsNullOrEmpty(blocksJson))
+        {
+            blocksDoc = JsonDocument.Parse(blocksJson);
+            payload = new
+            {
+                channel = channelId,
+                text,                       // notification + fallback text
+                blocks = blocksDoc.RootElement,
+                thread_ts = threadTs,
+                unfurl_links = false,
+                unfurl_media = false,
+            };
+        }
+        else if (string.IsNullOrEmpty(color))
         {
             payload = new
             {
@@ -57,23 +71,14 @@ public sealed class SlackClient
         }
         else
         {
-            // Build the attachment as a dictionary so the optional Block Kit layout and
-            // author row (a human actor's GitHub avatar + name + link) are conditional.
+            // Legacy colour-barred attachment (plan-type notifications without blocks).
             var attachment = new Dictionary<string, object?>
             {
-                ["color"]    = string.IsNullOrEmpty(color) ? "#6B7280" : color,
-                ["fallback"] = PlainFallback(text),
+                ["color"]     = color,
+                ["text"]      = text,
+                ["mrkdwn_in"] = new[] { "text" },
+                ["fallback"]  = PlainFallback(text),
             };
-            if (!string.IsNullOrEmpty(blocksJson))
-            {
-                blocksDoc = JsonDocument.Parse(blocksJson);
-                attachment["blocks"] = blocksDoc.RootElement;
-            }
-            else
-            {
-                attachment["text"]      = text;
-                attachment["mrkdwn_in"] = new[] { "text" };
-            }
             if (!string.IsNullOrWhiteSpace(authorName)) attachment["author_name"] = authorName;
             if (!string.IsNullOrWhiteSpace(authorIcon)) attachment["author_icon"] = authorIcon;
             if (!string.IsNullOrWhiteSpace(authorLink)) attachment["author_link"] = authorLink;

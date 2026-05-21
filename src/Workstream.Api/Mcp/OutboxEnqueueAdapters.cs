@@ -362,7 +362,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 
         return SlackBlockKitBuilder.Build(
             HeaderFor(notificationType, null),
-            fields, identity.ActorLine,
+            fields, ContextLine(identity),
             body.Count > 0 ? string.Join("\n\n", body) : null,
             DetailsButton(EntityType.Task, projectId, task.Id));
     }
@@ -397,10 +397,20 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
 
         return SlackBlockKitBuilder.Build(
             HeaderFor(notificationType, SeverityEmoji(finding.Severity)),
-            fields, identity.ActorLine,
+            fields, ContextLine(identity),
             body.Count > 0 ? string.Join("\n\n", body) : null,
             DetailsButton(EntityType.Finding, projectId, finding.Id));
     }
+
+    /// <summary>
+    /// The card's context line. An AI actor keeps its role-persona line; a human actor —
+    /// whose identity used to ride on the (now dropped) attachment author row — is
+    /// rendered inline so block-based cards still attribute the person.
+    /// </summary>
+    private static string? ContextLine(ActorIdentity identity)
+        => !string.IsNullOrEmpty(identity.ActorLine) ? identity.ActorLine
+           : identity.AuthorName is { Length: > 0 } name ? $":bust_in_silhouette: {name}"
+           : null;
 
     /// <summary>
     /// The single <c>View details</c> action button. Its <c>value</c> carries
