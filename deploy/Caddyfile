@@ -1,13 +1,13 @@
-# Caddy reverse-proxy config for mcp.trycrbrl.xyz (§12.3, §13.1).
+# Caddy reverse-proxy config for mcp.wrkstream.xyz (§12.3, §13.1).
 #
 # Important: the access log is configured to omit the URL path (which contains the
 # user's bearer token). Without redaction, the log file becomes a credential leak.
 
 {
-  email ops@trycrbrl.xyz
+  email ops@wrkstream.xyz
 }
 
-mcp.trycrbrl.xyz {
+mcp.wrkstream.xyz {
   encode gzip zstd
 
   # Security headers
