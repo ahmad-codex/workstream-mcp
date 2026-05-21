@@ -26,7 +26,7 @@ Update `deploy/docker-compose.yml` to list any additional Slack secrets you add.
 ## Caddy config
 
 ```caddyfile
-mcp.trycrbrl.xyz {
+mcp.wrkstream.xyz {
   reverse_proxy api:8080
   encode gzip zstd
   header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
@@ -55,7 +55,7 @@ The API container runs migrations on startup (the `SqlMigrationRunner` in `Works
 ## Smoke
 
 ```bash
-WORKSTREAM_BASE=https://mcp.trycrbrl.xyz \
+WORKSTREAM_BASE=https://mcp.wrkstream.xyz \
 WORKSTREAM_TEST_TOKEN=<a-test-user-token> \
 WORKSTREAM_TEST_PLAN_ID=<a-pre-created-dev-plan-id> \
 ./scripts/smoke.sh

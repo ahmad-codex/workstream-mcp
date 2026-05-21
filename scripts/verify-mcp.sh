@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify-mcp — quick sanity-check a workstream MCP URL before adding it to Claude (§14.5).
-# Usage:  ./scripts/verify-mcp.sh https://mcp.trycrbrl.xyz/<your-token>
+# Usage:  ./scripts/verify-mcp.sh https://mcp.wrkstream.xyz/<your-token>
 
 set -euo pipefail
 

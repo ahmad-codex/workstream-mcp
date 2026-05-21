@@ -78,7 +78,7 @@ The system is generic; it does not know about audits specifically. The vocabular
 
 ## 3. Multi-Tenant Identity: URL-as-Credential
 
-The user requirement is: `mcp.trycrbrl.xyz/<uniqueId>` per user, no traditional authentication, the unique id IS the authentication. This is a bearer-token-in-path model. It works for the threat model (trusted internal team, no public exposure to unknown actors), and it is plug-and-play in the sense that a new developer pastes one URL into their Claude config and is done. The spec below makes the token strong enough to survive that role.
+The user requirement is: `mcp.wrkstream.xyz/<uniqueId>` per user, no traditional authentication, the unique id IS the authentication. This is a bearer-token-in-path model. It works for the threat model (trusted internal team, no public exposure to unknown actors), and it is plug-and-play in the sense that a new developer pastes one URL into their Claude config and is done. The spec below makes the token strong enough to survive that role.
 
 ### 3.1 Token format and properties
 
@@ -89,7 +89,7 @@ The user requirement is: `mcp.trycrbrl.xyz/<uniqueId>` per user, no traditional 
 
 ### 3.2 Resolution flow
 
-When a request arrives at `https://mcp.trycrbrl.xyz/<token>/...`:
+When a request arrives at `https://mcp.wrkstream.xyz/<token>/...`:
 1. The HTTP host strips the token from the path and looks up the user in a `users` table indexed on `mcp_url_token` (unique B-tree index).
 2. If not found, return 404. Do not return 401 — 401 leaks the existence of the namespace. 404 is indistinguishable from "no such route."
 3. If found and active, attach the `actor_id` and `actor_type` to the ambient `RequestContext` for the lifetime of the request. Every subsequent DB write and event emission uses this actor.
@@ -524,7 +524,7 @@ Multi-step lifecycles (a task with several finding-and-fix cycles) get threaded:
 
 ## 9. MCP Tool Surface
 
-The MCP server exposes tools at `https://mcp.trycrbrl.xyz/<token>/mcp` over the Streamable HTTP transport (the current MCP spec; SSE remains supported for backwards compat). The token in the path resolves the calling actor; every tool call inherits that actor context.
+The MCP server exposes tools at `https://mcp.wrkstream.xyz/<token>/mcp` over the Streamable HTTP transport (the current MCP spec; SSE remains supported for backwards compat). The token in the path resolves the calling actor; every tool call inherits that actor context.
 
 Tools cluster into six groups. All tool names are snake_case. All inputs and outputs are JSON. Every mutating tool runs in a single Postgres transaction and writes to the `events` table as part of that transaction.
 
@@ -712,9 +712,9 @@ This file is the canonical operational artifact. Commit it to the workstream-mcp
 
 ### 10.3 URL surface
 
-The user-facing URL format `mcp.trycrbrl.xyz/<token>` is constructed at user-creation time. The base host (`mcp.trycrbrl.xyz`) is configured via `WORKSTREAM_PUBLIC_BASE_URL`. Token generation, storage, and rotation are described in Section 3.
+The user-facing URL format `mcp.wrkstream.xyz/<token>` is constructed at user-creation time. The base host (`mcp.wrkstream.xyz`) is configured via `WORKSTREAM_PUBLIC_BASE_URL`. Token generation, storage, and rotation are described in Section 3.
 
-For the curious: the actual MCP endpoint inside the host is the `/mcp` suffix per Streamable HTTP convention. The user's full Claude config URL is `https://mcp.trycrbrl.xyz/<token>/mcp`. The bare `/<token>` returns a small JSON status page that confirms the token resolves to a valid user and shows the user's display name — useful for sanity-checking a copy-pasted URL before adding it to Claude.
+For the curious: the actual MCP endpoint inside the host is the `/mcp` suffix per Streamable HTTP convention. The user's full Claude config URL is `https://mcp.wrkstream.xyz/<token>/mcp`. The bare `/<token>` returns a small JSON status page that confirms the token resolves to a valid user and shows the user's display name — useful for sanity-checking a copy-pasted URL before adding it to Claude.
 
 ---
 
@@ -825,7 +825,7 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
-      WORKSTREAM_PUBLIC_BASE_URL: https://mcp.trycrbrl.xyz
+      WORKSTREAM_PUBLIC_BASE_URL: https://mcp.wrkstream.xyz
       WORKSTREAM_DB_CONNECTION: "Host=postgres;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=50;Pooling=true"
       WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
       WORKSTREAM_ADMIN_TOKEN_FILE: /run/secrets/admin_token
@@ -859,9 +859,9 @@ The original SwanAudit doc called for PgBouncer. For this v1 with .NET 10 and Np
 
 ### 12.3 Reverse proxy and TLS
 
-The Hetzner host runs Caddy (or the existing nginx, depending on what `hetzner-moelabs` MCP already operates) terminating TLS for `mcp.trycrbrl.xyz` and proxying to the `api` container on port 8080. Caddy config:
+The Hetzner host runs Caddy (or the existing nginx, depending on what `hetzner-moelabs` MCP already operates) terminating TLS for `mcp.wrkstream.xyz` and proxying to the `api` container on port 8080. Caddy config:
 ```caddyfile
-mcp.trycrbrl.xyz {
+mcp.wrkstream.xyz {
   reverse_proxy api:8080
   log {
     format json
@@ -891,7 +891,7 @@ The URL-as-credential model needs operational discipline to be secure. This sect
 
 - **Never log the path**. Caddy is configured with `request> uri redact` or its equivalent — the structured log format omits the path or substitutes `<redacted>` for the second segment.
 - **Never log the token**. The MCP server's logging middleware strips the path before any log line is written; only the resolved `actor_id` reaches the logs.
-- **Never include the token in error messages**, error pages, or trace exporters. OTel attribute `http.url` is replaced with the user-id-templated form `https://mcp.trycrbrl.xyz/<user:moe>/mcp`.
+- **Never include the token in error messages**, error pages, or trace exporters. OTel attribute `http.url` is replaced with the user-id-templated form `https://mcp.wrkstream.xyz/<user:moe>/mcp`.
 - **Never put the token in webhook responses or any outbound HTTP** the server makes (e.g. GitHub callbacks).
 
 ### 13.2 Token transport hardening
@@ -943,7 +943,7 @@ This is the user's stated end-goal: "plug and play for a new developer just to a
 
 ```bash
 workstream-admin user create --github-username new-dev --display "New Developer" --type human
-# Output: User created. URL: https://mcp.trycrbrl.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+# Output: User created. URL: https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 # Copy this URL exactly. It will not be shown again.
 ```
 
@@ -954,7 +954,7 @@ Add to Claude config (`~/.claude/mcp.json` or the equivalent Claude UI):
 {
   "mcpServers": {
     "workstream": {
-      "url": "https://mcp.trycrbrl.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
+      "url": "https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
       "transport": "http"
     }
   }

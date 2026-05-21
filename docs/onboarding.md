@@ -8,7 +8,7 @@ The headline workflow (§14): the user adds one URL to Claude's config and is do
 workstream-admin user create --github-username new-dev --display "New Developer" --type human
 # Output:
 #   User created.
-#   URL: https://mcp.trycrbrl.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+#   URL: https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 #   Copy this URL exactly. It will not be shown again.
 ```
 
@@ -26,7 +26,7 @@ Add to `~/.claude/mcp.json` (or via the Claude UI):
 {
   "mcpServers": {
     "workstream": {
-      "url": "https://mcp.trycrbrl.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
+      "url": "https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
       "transport": "http"
     }
   }
@@ -36,7 +36,7 @@ Add to `~/.claude/mcp.json` (or via the Claude UI):
 Verify the URL before adding it:
 
 ```bash
-./scripts/verify-mcp.sh https://mcp.trycrbrl.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+./scripts/verify-mcp.sh https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 # OK. Server identifies you as:
 # { "ok": true, "actor": { "github_username": "new-dev", "is_admin": false }, ... }
 ```

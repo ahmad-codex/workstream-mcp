@@ -14,7 +14,7 @@ namespace Workstream.Admin;
 ///
 /// The CLI talks to the server's admin endpoints over HTTPS with the static
 /// <c>WORKSTREAM_ADMIN_TOKEN</c> bearer. Configuration:
-///   * <c>WORKSTREAM_ADMIN_URL</c>   — e.g. https://mcp.trycrbrl.xyz
+///   * <c>WORKSTREAM_ADMIN_URL</c>   — e.g. https://mcp.wrkstream.xyz
 ///   * <c>WORKSTREAM_ADMIN_TOKEN</c> — the bearer token
 /// Optionally a <c>.workstream-admin.toml</c> in the working dir overrides these.
 ///
