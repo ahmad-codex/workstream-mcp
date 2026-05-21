@@ -77,6 +77,7 @@ services:
       WORKSTREAM_GH_INSTALLATION_ID: ${WORKSTREAM_GH_INSTALLATION_ID:-0}
       WORKSTREAM_GH_APP_KEY_PATH: /run/secrets/gh_app_key
       WORKSTREAM_GH_WEBHOOK_SECRET_FILE: /run/secrets/gh_webhook_secret
+      WORKSTREAM_SLACK_SIGNING_SECRET_FILE: /run/secrets/slack_signing_secret
       WORKSTREAM_OTEL_ENDPOINT: ${WORKSTREAM_OTEL_ENDPOINT:-}
     secrets:
       # The api container runs as root (see Dockerfile.api comment) so the
@@ -87,6 +88,7 @@ services:
       - gh_app_key
       - gh_webhook_secret
       - slack_demo
+      - slack_signing_secret
     ports:
       - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 
@@ -99,6 +101,7 @@ secrets:
   gh_app_key:         { file: ./secrets/gh_app_key.pem }
   gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
   slack_demo:         { file: ./secrets/slack-demo }
+  slack_signing_secret: { file: ./secrets/slack_signing_secret }
 
 volumes:
   workstream-pg-data:
