@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `workstream-mcp` is the MCP server that holds **workflow state** for AI agents and humans collaborating on software work across many products, repos, GitHub Project boards, and users. The full build specification lives in [`workstream-mcp-spec.md`](./workstream-mcp-spec.md) at the repo root — it is implementation-ready and authoritative. **Read it before making non-trivial changes.**
 
+## External documentation
+
+- **Slack platform:** When working on anything touching the Slack integration, start with the documentation index at https://docs.slack.dev/llms.txt — a structured, LLM-oriented overview of the platform. A full page index is at https://docs.slack.dev/llms-sitemap.md.
+
 ## Commands
 
 ```powershell
