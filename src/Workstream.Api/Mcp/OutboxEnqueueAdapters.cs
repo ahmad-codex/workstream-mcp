@@ -175,20 +175,46 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
+        var project = await _projects.GetAsync(plan.ProjectId, ct).ConfigureAwait(false);
         var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
         {
             ["actor"]     = ctx.DisplayActor,
             ["plan_name"] = plan.Name,
-            ["project"]   = plan.ProjectId.ToString(),
+            ["project"]   = project?.DisplayName ?? plan.ProjectId.ToString(),
         });
+        var blocks = BuildPlanBlocks(project?.DisplayName, plan, pt.Row, notificationType, ctx);
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Plan, EntityId = plan.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body,
+            Body = body, BlocksJson = blocks,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Build the Block Kit payload for a plan notification: a header, a
+    /// Project / Plan / Type / Status field grid, the plan objective as the body, and a
+    /// <c>View details</c> button. Keeps plan posts as informative as task / finding ones.
+    /// </summary>
+    private static string BuildPlanBlocks(
+        string? projectName, Plan plan, PlanType planType, string notificationType, RequestContext ctx)
+    {
+        var fields = new List<SlackBlockKitBuilder.Field>
+        {
+            new("Project", projectName ?? "—"),
+            new("Plan", plan.Name),
+            new("Type", string.IsNullOrWhiteSpace(planType.DisplayName) ? plan.PlanTypeId : planType.DisplayName),
+            new("Status", Humanize(plan.Status)),
+        };
+        var context = string.IsNullOrWhiteSpace(ctx.DisplayActor)
+            ? null : $":bust_in_silhouette: {ctx.DisplayActor}";
+        return SlackBlockKitBuilder.Build(
+            HeaderFor(notificationType, null),
+            fields, context,
+            string.IsNullOrWhiteSpace(plan.Objective) ? null : plan.Objective!.Trim(),
+            DetailsButton(EntityType.Plan, plan.ProjectId, plan.Id));
     }
 
     private async Task<string?> ResolveChannelAsync(Plan plan, CancellationToken ct)
@@ -445,6 +471,9 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         "fix.confirmed"              => ":white_check_mark: Fix confirmed",
         "fix.failed"                 => ":x: Fix failed",
         "fix.partial"                => ":large_yellow_circle: Fix partial",
+        "plan.activated"             => ":rocket: Plan activated",
+        "plan.completed"             => ":checkered_flag: Plan completed",
+        "plan.archived"              => ":file_cabinet: Plan archived",
         _                            => Humanize(notificationType),
     };
 
