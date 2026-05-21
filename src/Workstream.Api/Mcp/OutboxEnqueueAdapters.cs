@@ -9,6 +9,7 @@ using Workstream.Core.Domain;
 using Workstream.Core.StateMachine;
 using Workstream.Data.Repositories;
 using Workstream.Mcp.Notifications;
+using Workstream.Slack;
 
 namespace Workstream.Api.Mcp;
 
@@ -90,6 +91,14 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
 
         var body = FormatTemplate(pt.Row, notificationType, tokens);
+
+        // Rich Block Kit payload: a header, a Project / Plan / Task / Status field grid,
+        // the persona context line, and deep-link buttons. The plain body stays as the
+        // attachment fallback. Built from the same data the body tokens carry.
+        var project = await _projects.GetAsync(plan.ProjectId, ct).ConfigureAwait(false);
+        var blocks = BuildTaskBlocks(project?.DisplayName, plan.ProjectId, plan.Name,
+            notificationType, titleLink, task, identity, extraTokens);
+
         // Per operator preference, each state change is its own top-level post (no
         // thread reply). The spec's threaded design (§8.4) is preserved as data — the
         // first slack_ts is still recorded on slack_notify_log.
@@ -98,7 +107,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Task, EntityId = task.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, Color = identity.Color,
+            Body = body, BlocksJson = blocks, Color = identity.Color,
             AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
@@ -145,12 +154,18 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
 
         var body = FormatTemplate(pt.Row, notificationType, tokens);
+
+        // Rich Block Kit payload — finding deep-links to the parent audit task's card.
+        var project = await _projects.GetAsync(plan.ProjectId, ct).ConfigureAwait(false);
+        var blocks = BuildFindingBlocks(project?.DisplayName, plan.ProjectId, plan.Name,
+            notificationType, findingLink, taskTitleLink, finding, identity, extraTokens);
+
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
             EntityType = EntityType.Finding, EntityId = finding.Id,
             ChannelId = channel, NotificationType = notificationType,
-            Body = body, Color = identity.Color,
+            Body = body, BlocksJson = blocks, Color = identity.Color,
             AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
         }, ct).ConfigureAwait(false);
@@ -315,6 +330,123 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         "low"      => ":white_small_square:",
         _          => ":small_red_triangle:",
     };
+
+    /// <summary>
+    /// Build the Block Kit payload for a task notification: a header, a
+    /// Project / Plan / Task / Status field grid, an optional description / reason /
+    /// commit body, the persona context line (blank for human actors), and a
+    /// <c>View details</c> button that opens the detail modal (Part B).
+    /// </summary>
+    private static string BuildTaskBlocks(
+        string? projectName, Guid projectId, string planName, string notificationType,
+        string titleLink, WorkTask task, ActorIdentity identity,
+        IReadOnlyDictionary<string, string>? extras)
+    {
+        var fields = new List<SlackBlockKitBuilder.Field>
+        {
+            new("Project", projectName ?? "—"),
+            new("Plan", planName),
+            new("Task", titleLink),
+            new("Status", Humanize(task.Status)),
+        };
+
+        var body = new List<string>();
+        if (!string.IsNullOrWhiteSpace(task.Description)) body.Add(task.Description!.Trim());
+        if (extras is not null)
+        {
+            if (extras.TryGetValue("reason", out var r) && !string.IsNullOrWhiteSpace(r))
+                body.Add($"*Reason:* {r}");
+            if (extras.TryGetValue("commit", out var c) && !string.IsNullOrWhiteSpace(c))
+                body.Add($"*Commit:* `{c}`");
+        }
+
+        return SlackBlockKitBuilder.Build(
+            HeaderFor(notificationType, null),
+            fields, identity.ActorLine,
+            body.Count > 0 ? string.Join("\n\n", body) : null,
+            DetailsButton(EntityType.Task, projectId, task.Id));
+    }
+
+    /// <summary>
+    /// Build the Block Kit payload for a finding notification: a header carrying the
+    /// severity emoji, a Project / Plan / Finding / Severity / Audit-task field grid,
+    /// the symptom and any verdict reason as the body, and a <c>View details</c> button.
+    /// </summary>
+    private static string BuildFindingBlocks(
+        string? projectName, Guid projectId, string planName, string notificationType,
+        string findingLink, string taskTitleLink, Finding finding,
+        ActorIdentity identity, IReadOnlyDictionary<string, string>? extras)
+    {
+        var severity = string.IsNullOrWhiteSpace(finding.Severity)
+            ? "—"
+            : $"{SeverityEmoji(finding.Severity)} {Humanize(finding.Severity!)}";
+
+        var fields = new List<SlackBlockKitBuilder.Field>
+        {
+            new("Project", projectName ?? "—"),
+            new("Plan", planName),
+            new("Finding", findingLink),
+            new("Severity", severity),
+            new("Audit task", taskTitleLink),
+        };
+
+        var body = new List<string>();
+        if (!string.IsNullOrWhiteSpace(finding.Symptom)) body.Add(finding.Symptom!.Trim());
+        if (extras is not null && extras.TryGetValue("reason", out var r) && !string.IsNullOrWhiteSpace(r))
+            body.Add($"*Reason:* {r}");
+
+        return SlackBlockKitBuilder.Build(
+            HeaderFor(notificationType, SeverityEmoji(finding.Severity)),
+            fields, identity.ActorLine,
+            body.Count > 0 ? string.Join("\n\n", body) : null,
+            DetailsButton(EntityType.Finding, projectId, finding.Id));
+    }
+
+    /// <summary>
+    /// The single <c>View details</c> action button. Its <c>value</c> carries
+    /// <c>entityType|projectId|entityId</c> so the interactivity endpoint (Part B) can
+    /// load the entity and open the detail modal. Until that endpoint ships the button
+    /// renders but the click has no handler.
+    /// </summary>
+    private static IReadOnlyList<SlackBlockKitBuilder.Button> DetailsButton(
+        string entityType, Guid projectId, Guid entityId)
+        => new[]
+        {
+            SlackBlockKitBuilder.Button.Action(
+                ":mag: View details", "view_details",
+                $"{entityType}|{projectId}|{entityId}", "primary"),
+        };
+
+    /// <summary>The Block Kit header line — an emoji plus a human-readable event name.</summary>
+    private static string HeaderFor(string notificationType, string? severityEmoji) => notificationType switch
+    {
+        "task.created"               => ":new: Task created",
+        "task.claimed"               => ":inbox_tray: Task claimed",
+        "task.in_progress"           => ":hourglass_flowing_sand: Task in progress",
+        "task.review"                => ":mag: Task in review",
+        "task.done"                  => ":white_check_mark: Task done",
+        "task.blocked"               => ":no_entry: Task blocked",
+        "task.needs_human_review"    => ":raising_hand: Task needs human review",
+        "finding.confirmed"          => $"{severityEmoji ?? ":white_check_mark:"} Finding confirmed",
+        "finding.rejected"           => ":x: Finding rejected",
+        "finding.ambiguous"          => ":grey_question: Finding ambiguous",
+        "finding.needs_human_review" => ":raising_hand: Finding needs human review",
+        "finding.deferred"           => ":double_vertical_bar: Finding deferred",
+        "fix.confirmed"              => ":white_check_mark: Fix confirmed",
+        "fix.failed"                 => ":x: Fix failed",
+        "fix.partial"                => ":large_yellow_circle: Fix partial",
+        _                            => Humanize(notificationType),
+    };
+
+    /// <summary>Turn a dotted / underscored token (status, event type) into Title Case words.</summary>
+    private static string Humanize(string s)
+    {
+        var words = s.Replace('.', ' ').Replace('_', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < words.Length; i++)
+            words[i] = char.ToUpperInvariant(words[i][0]) + words[i][1..].ToLowerInvariant();
+        return words.Length == 0 ? s : string.Join(' ', words);
+    }
 
     /// <summary>Collapse a finding symptom to a single short line for a Slack link label.</summary>
     private static string ShortSummary(string? text, int max = 90)

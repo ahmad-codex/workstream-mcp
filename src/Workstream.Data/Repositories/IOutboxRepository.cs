@@ -47,6 +47,10 @@ public sealed record SlackNotifyRow
     public string  ChannelId        { get; init; } = "";
     public string  NotificationType { get; init; } = "";
     public string  Body             { get; init; } = "";
+    // Rendered Block Kit `blocks` array (JSON). When present the worker posts it inside
+    // the coloured attachment; Body becomes the attachment `fallback`. NULL => post the
+    // plain Body. Resolved at enqueue time from the same tokens as Body.
+    public string? BlocksJson       { get; init; }
     // Attachment colour bar (hex, e.g. "#7C3AED"). NULL => post as a plain message.
     // Resolved at enqueue time from the plan-type's role_personas.
     public string? Color            { get; init; }

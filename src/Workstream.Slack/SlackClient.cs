@@ -26,21 +26,25 @@ public sealed class SlackClient
     }
 
     /// <summary>
-    /// Post a message. When <paramref name="color"/> is a non-empty hex string the body
-    /// is wrapped in a Slack attachment so the message renders with a coloured left bar
-    /// (keyed to the acting role); otherwise it posts as a plain mrkdwn message. When
-    /// <paramref name="authorName"/> is supplied the attachment also carries an author
-    /// row — for a human actor that is their real GitHub avatar, name, and profile link.
+    /// Post a message. When <paramref name="blocksJson"/> (a Block Kit <c>blocks</c>
+    /// array) or <paramref name="color"/> is supplied the message is wrapped in a Slack
+    /// attachment so it renders with a coloured left bar keyed to the acting role; with
+    /// blocks the rich layout renders inside the attachment and <paramref name="text"/>
+    /// becomes the notification fallback. Otherwise it posts as a plain mrkdwn message.
+    /// When <paramref name="authorName"/> is supplied the attachment also carries an
+    /// author row — for a human actor that is their real GitHub avatar, name, and link.
     /// </summary>
     public async Task<SlackPostResult> PostMessageAsync(
         string botToken, string channelId, string text, string? threadTs,
         string? color = null, string? authorName = null, string? authorIcon = null, string? authorLink = null,
-        CancellationToken ct = default)
+        string? blocksJson = null, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "chat.postMessage");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
+        // The blocks document must outlive JsonContent's lazy serialization in SendAsync.
+        JsonDocument? blocksDoc = null;
         object payload;
-        if (string.IsNullOrEmpty(color))
+        if (string.IsNullOrEmpty(color) && string.IsNullOrEmpty(blocksJson))
         {
             payload = new
             {
@@ -53,15 +57,23 @@ public sealed class SlackClient
         }
         else
         {
-            // Build the attachment as a dictionary so the optional author row (a human
-            // actor's GitHub avatar + name + profile link) can be added conditionally.
+            // Build the attachment as a dictionary so the optional Block Kit layout and
+            // author row (a human actor's GitHub avatar + name + link) are conditional.
             var attachment = new Dictionary<string, object?>
             {
-                ["color"]     = color,
-                ["text"]      = text,
-                ["mrkdwn_in"] = new[] { "text" },
-                ["fallback"]  = PlainFallback(text),
+                ["color"]    = string.IsNullOrEmpty(color) ? "#6B7280" : color,
+                ["fallback"] = PlainFallback(text),
             };
+            if (!string.IsNullOrEmpty(blocksJson))
+            {
+                blocksDoc = JsonDocument.Parse(blocksJson);
+                attachment["blocks"] = blocksDoc.RootElement;
+            }
+            else
+            {
+                attachment["text"]      = text;
+                attachment["mrkdwn_in"] = new[] { "text" };
+            }
             if (!string.IsNullOrWhiteSpace(authorName)) attachment["author_name"] = authorName;
             if (!string.IsNullOrWhiteSpace(authorIcon)) attachment["author_icon"] = authorIcon;
             if (!string.IsNullOrWhiteSpace(authorLink)) attachment["author_link"] = authorLink;
@@ -75,10 +87,18 @@ public sealed class SlackClient
             };
         }
         req.Content = JsonContent.Create(payload);
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-        var content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-            throw new HttpRequestException($"slack HTTP {(int)resp.StatusCode}: {content}");
+        string content;
+        try
+        {
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"slack HTTP {(int)resp.StatusCode}: {content}");
+        }
+        finally
+        {
+            blocksDoc?.Dispose();
+        }
         using var doc = JsonDocument.Parse(content);
         var ok = doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.GetBoolean();
         if (!ok)

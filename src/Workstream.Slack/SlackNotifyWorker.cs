@@ -94,11 +94,11 @@ public sealed class SlackNotifyWorker : BackgroundService
                 return;
             }
 
-            var body = await UpgradeBoardLinkToItemLinkAsync(row, ct).ConfigureAwait(false);
+            var (body, blocks) = await UpgradeBoardLinkToItemLinkAsync(row, ct).ConfigureAwait(false);
 
             var token = await _tokens.ResolveAsync(slackCfg.BotTokenSecretRef, ct).ConfigureAwait(false);
             var result = await _slack.PostMessageAsync(token, row.ChannelId, body, row.ThreadTs, row.Color,
-                row.AuthorName, row.AuthorIcon, row.AuthorLink, ct).ConfigureAwait(false);
+                row.AuthorName, row.AuthorIcon, row.AuthorLink, blocks, ct).ConfigureAwait(false);
             if (!result.Ok)
             {
                 throw new InvalidOperationException($"slack rejected post: {result.Error}");
@@ -140,29 +140,38 @@ public sealed class SlackNotifyWorker : BackgroundService
     }
 
     /// <summary>
-    /// If the body contains a board-page link for a task whose item id is now known,
-    /// rewrite the link to the project's side-pane URL. Returns the body unchanged when
-    /// there's no upgrade to do.
+    /// If the body or blocks carry a board-page link for a task whose item id is now
+    /// known, rewrite it to the project's side-pane URL. Returns the (body, blocks) pair
+    /// unchanged when there's no upgrade to do.
     /// </summary>
-    private async Task<string> UpgradeBoardLinkToItemLinkAsync(SlackNotifyRow row, CancellationToken ct)
+    private async Task<(string Body, string? Blocks)> UpgradeBoardLinkToItemLinkAsync(SlackNotifyRow row, CancellationToken ct)
     {
-        if (row.EntityType != EntityType.Task) return row.Body;
-        if (row.PlanId is null) return row.Body;
+        if (row.EntityType != EntityType.Task) return (row.Body, row.BlocksJson);
+        if (row.PlanId is null) return (row.Body, row.BlocksJson);
 
         var plan = await _plans.GetAsync(row.PlanId.Value, ct).ConfigureAwait(false);
-        if (plan?.PrimaryBoardId is not { } boardId) return row.Body;
+        if (plan?.PrimaryBoardId is not { } boardId) return (row.Body, row.BlocksJson);
 
         var board = await _projects.GetBoardAsync(boardId, ct).ConfigureAwait(false);
-        if (board is null) return row.Body;
+        if (board is null) return (row.Body, row.BlocksJson);
 
         var num = await _tasks.GetGithubBoardItemNumberAsync(row.EntityId, ct).ConfigureAwait(false);
-        if (num is null) return row.Body;
+        if (num is null) return (row.Body, row.BlocksJson);
 
         var boardUrl = $"https://github.com/orgs/{board.GithubOwner}/projects/{board.GithubProjectNumber}";
-        // Avoid matching links that already point at /views/...?pane=... by anchoring the
-        // boardUrl with a closing pipe right after — i.e., only the bare board-page form.
-        var pattern = $"<{Regex.Escape(boardUrl)}\\|([^>]+)>";
         var paneUrl = $"{boardUrl}/views/1?pane=issue&itemId={num}";
-        return Regex.Replace(row.Body, pattern, m => $"<{paneUrl}|{m.Groups[1].Value}>");
+
+        // Body: rewrite the mrkdwn link form <boardUrl|label>.
+        var linkPattern = $"<{Regex.Escape(boardUrl)}\\|([^>]+)>";
+        var body = Regex.Replace(row.Body, linkPattern, m => $"<{paneUrl}|{m.Groups[1].Value}>");
+
+        // Blocks: the board URL appears bare (button `url`, section links). Upgrade only
+        // the bare board-page form — a negative lookahead skips a URL already carrying
+        // the /views… pane suffix so a second pass can't corrupt it.
+        string? blocks = row.BlocksJson;
+        if (blocks is not null)
+            blocks = Regex.Replace(blocks, $"{Regex.Escape(boardUrl)}(?!/views)", paneUrl);
+
+        return (body, blocks);
     }
 }
