@@ -116,6 +116,30 @@ public sealed class SlackClient
     }
 
     /// <summary>
+    /// Open a modal. <paramref name="triggerId"/> comes from the interaction payload and
+    /// is valid for ~3 seconds, so the caller must reach here promptly.
+    /// <paramref name="viewJson"/> is a Block Kit modal <c>view</c> object.
+    /// </summary>
+    public async Task<SlackPostResult> OpenViewAsync(
+        string botToken, string triggerId, string viewJson, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, "views.open");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
+        using var viewDoc = JsonDocument.Parse(viewJson);
+        req.Content = JsonContent.Create(new { trigger_id = triggerId, view = viewDoc.RootElement });
+
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        var content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"slack HTTP {(int)resp.StatusCode}: {content}");
+        using var doc = JsonDocument.Parse(content);
+        var ok = doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.GetBoolean();
+        if (ok) return new SlackPostResult(true, null, null);
+        var err = doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
+        return new SlackPostResult(false, null, err);
+    }
+
+    /// <summary>
     /// Plain-text fallback for an attachment (shown in notifications and older clients):
     /// collapse mrkdwn links &lt;url|label&gt; to just the label.
     /// </summary>

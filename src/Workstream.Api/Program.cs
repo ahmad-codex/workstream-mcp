@@ -67,6 +67,11 @@ builder.Services.AddHostedService<BoardSyncWorker>();
 builder.Services.AddSingleton<ISlackBotTokenResolver, FileSlackBotTokenResolver>();
 builder.Services.AddHttpClient<SlackClient>();
 builder.Services.AddHostedService<SlackNotifyWorker>();
+builder.Services.Configure<SlackAppOptions>(o =>
+{
+    o.SigningSecret = ResolveSecret(builder.Configuration,
+        "WORKSTREAM_SLACK_SIGNING_SECRET", "WORKSTREAM_SLACK_SIGNING_SECRET_FILE");
+});
 
 // ----- MCP tools -----
 builder.Services.AddWorkstreamMcpTools();
@@ -98,6 +103,7 @@ app.UseMiddleware<RateLimitMiddleware>();
 app.MapStatus();
 app.MapMcp();
 app.MapProjectsWebhook();
+app.MapSlackInteractivity();
 app.MapAdmin();
 
 await app.RunAsync().ConfigureAwait(false);
