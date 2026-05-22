@@ -61,21 +61,35 @@ git "${git_auth[@]}" -C "${repo_dir}" pull --ff-only \
 # edits files) and its own Claude config dir.
 chown -R auditor:auditor "${repo_dir}" /home/auditor
 
-# Pre-seed the auditor's ~/.claude.json so Claude Code's first-run theme/onboarding
-# wizard never blocks the run. The trust dialog and per-tool prompts are bypassed by
-# --dangerously-skip-permissions below. Auth lives in the persisted .claude volume.
+# Pre-seed the auditor's ~/.claude.json: skip the first-run theme/onboarding wizard, and
+# pre-accept the folder-trust dialog for this repo.
 node -e '
   const fs = require("fs"), path = "/home/auditor/.claude.json";
   let c = {}; try { c = JSON.parse(fs.readFileSync(path, "utf8")); } catch {}
   c.theme = c.theme || "dark";
   c.hasCompletedOnboarding = true;
+  c.projects = c.projects || {};
+  c.projects[process.argv[1]] = { ...(c.projects[process.argv[1]] || {}), hasTrustDialogAccepted: true };
   fs.writeFileSync(path, JSON.stringify(c, null, 2));
-'
+' "${repo_dir}"
 chown auditor:auditor /home/auditor/.claude.json
 
 # Launch the project's audit orchestrator as `auditor` in a detached, attachable tmux
-# session. --dangerously-skip-permissions: the dispatcher runs the project's own
-# /audit-run fully unattended, so the trust dialog and per-tool prompts are all bypassed.
+# session. --dangerously-skip-permissions bypasses the per-tool approval prompts so the
+# run is unattended (the project's own /audit-run, on first-party code).
 tmux new-session -d -s "${session}" -c "${repo_dir}" \
   runuser -u auditor -- env HOME=/home/auditor claude --dangerously-skip-permissions "/audit-run"
+
+# The folder-trust dialog is a separate gate that --dangerously-skip-permissions does not
+# cover and that the config key above does not reliably suppress. Watch for it and accept
+# it ("1. Yes" is pre-selected, so Enter confirms) so the run proceeds unattended.
+for _ in $(seq 1 25); do
+  if tmux capture-pane -t "${session}" -p 2>/dev/null | grep -q "trust this folder"; then
+    tmux send-keys -t "${session}" Enter
+    echo "[audit-dispatch] auto-accepted the folder-trust prompt"
+    break
+  fi
+  sleep 1
+done
+
 echo "[audit-dispatch] launched tmux session ${session} — attach with: tmux attach -t ${session}"
