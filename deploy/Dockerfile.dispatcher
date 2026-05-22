@@ -33,7 +33,7 @@ WORKDIR /app
 # git + tmux to check out repos and host attachable audit sessions; Node for the Claude
 # Code CLI the dispatch script invokes.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git tmux curl ca-certificates \
+ && apt-get install -y --no-install-recommends git tmux curl ca-certificates jq \
  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs openssh-client \
  && npm install -g @anthropic-ai/claude-code ssh-mcp \
