@@ -112,13 +112,15 @@ services:
       WORKSTREAM_AUDIT_DISPATCH_ENABLED: "true"
       WORKSTREAM_AUDIT_DISPATCH_SCRIPT: /app/audit-dispatch.sh
       WS_REPOS_DIR: /srv/audit-repos
-      # Claude Code auth for the audit runs the dispatch script launches.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     secrets:
       - pg_password
     volumes:
       # Persistent repo checkouts — cloned once, fast-forwarded on later audits.
       - audit-repos:/srv/audit-repos
+      # Claude Code auth + config. Persisted so the one-time interactive login
+      #   docker compose exec -it dispatcher claude   (then /login)
+      # survives container restarts and rebuilds — no API key needed.
+      - claude-config:/root/.claude
 
 secrets:
   # The `mode` for these mounts is set per-service in the long-form secrets
@@ -134,3 +136,4 @@ secrets:
 volumes:
   workstream-pg-data:
   audit-repos:
+  claude-config:
