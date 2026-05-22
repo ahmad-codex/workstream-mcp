@@ -80,14 +80,23 @@ chown auditor:auditor /home/auditor/.claude.json
 tmux new-session -d -s "${session}" -c "${repo_dir}" \
   runuser -u auditor -- env HOME=/home/auditor claude --dangerously-skip-permissions "/audit-run"
 
-# The folder-trust dialog is a separate gate that --dangerously-skip-permissions does not
-# cover and that the config key above does not reliably suppress. Watch for it and accept
-# it ("1. Yes" is pre-selected, so Enter confirms) so the run proceeds unattended.
-for _ in $(seq 1 25); do
-  if tmux capture-pane -t "${session}" -p 2>/dev/null | grep -q "trust this folder"; then
+# Two startup gates that neither --dangerously-skip-permissions nor config keys reliably
+# suppress, answered here so the run proceeds unattended:
+#   1. "trust this folder?"        — "Yes" is pre-selected, so Enter confirms.
+#   2. "Bypass Permissions mode"   — "No, exit" is pre-selected (!), so send "2" first.
+# Each is handled at most once; a bare Enter on the wrong prompt would quit the session.
+handled_trust=0
+handled_bypass=0
+for _ in $(seq 1 40); do
+  pane="$(tmux capture-pane -t "${session}" -p 2>/dev/null || true)"
+  if [[ ${handled_trust} -eq 0 ]] && grep -q "trust this folder" <<<"${pane}"; then
     tmux send-keys -t "${session}" Enter
-    echo "[audit-dispatch] auto-accepted the folder-trust prompt"
-    break
+    handled_trust=1
+    echo "[audit-dispatch] accepted the folder-trust prompt"
+  elif [[ ${handled_bypass} -eq 0 ]] && grep -q "Bypass Permissions mode" <<<"${pane}"; then
+    tmux send-keys -t "${session}" 2 Enter
+    handled_bypass=1
+    echo "[audit-dispatch] accepted the bypass-permissions warning"
   fi
   sleep 1
 done
