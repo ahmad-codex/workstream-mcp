@@ -16,6 +16,10 @@ public interface IOutboxRepository
     Task<IReadOnlyList<SlackNotifyRow>> ClaimSlackBatchAsync(int batchSize, CancellationToken ct = default);
     Task MarkSlackResultAsync(long id, string result, string? error, string? slackTs, TimeSpan? retryDelay, CancellationToken ct = default);
     Task<string?> GetParentSlackTsAsync(string entityType, Guid entityId, CancellationToken ct = default);
+
+    Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, CancellationToken ct = default);
+    Task<IReadOnlyList<AuditDispatchRow>> ClaimAuditDispatchBatchAsync(int batchSize, CancellationToken ct = default);
+    Task MarkAuditDispatchResultAsync(long id, string status, string? result, string? error, TimeSpan? retryDelay, CancellationToken ct = default);
 }
 
 // Property-style records (not positional) so Dapper uses the parameterless constructor +
@@ -65,4 +69,15 @@ public sealed record SlackNotifyRow
     public int     Attempts         { get; init; }
     public DateTime NextAttemptAt   { get; init; }
     public string  Result           { get; init; } = "pending";
+}
+
+/// <summary>One queued audit-dispatch request: launch a project's audit orchestrator.</summary>
+public sealed record AuditDispatchRow
+{
+    public long     Id            { get; init; }
+    public Guid     ProjectId     { get; init; }
+    public Guid?    RequestedBy   { get; init; }
+    public int      Attempts      { get; init; }
+    public DateTime NextAttemptAt { get; init; }
+    public string   Status        { get; init; } = "pending";
 }

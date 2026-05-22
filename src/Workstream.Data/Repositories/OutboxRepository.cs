@@ -166,4 +166,55 @@ public sealed class OutboxRepository : IOutboxRepository
             LIMIT 1
             """, new { entityType, entityId }, cancellationToken: ct)).ConfigureAwait(false);
     }
+
+    // ------- Audit dispatch outbox -------
+
+    public async Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+            INSERT INTO audit_dispatch_log (project_id, requested_by)
+            VALUES (@projectId, @requestedBy)
+            RETURNING id
+            """, new { projectId, requestedBy }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<AuditDispatchRow>> ClaimAuditDispatchBatchAsync(int batchSize, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        var sql = """
+            WITH next AS (
+                SELECT id FROM audit_dispatch_log
+                WHERE status IN ('pending','retry') AND next_attempt_at <= now()
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT @batchSize
+            )
+            UPDATE audit_dispatch_log a
+            SET attempts = attempts + 1, last_attempted_at = now(), status = 'running'
+            FROM next
+            WHERE a.id = next.id
+            RETURNING a.id              AS Id,
+                      a.project_id      AS ProjectId,
+                      a.requested_by    AS RequestedBy,
+                      a.attempts        AS Attempts,
+                      a.next_attempt_at AS NextAttemptAt,
+                      a.status          AS Status
+            """;
+        var rows = await conn.QueryAsync<AuditDispatchRow>(new CommandDefinition(sql, new { batchSize }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    public async Task MarkAuditDispatchResultAsync(long id, string status, string? result, string? error, TimeSpan? retryDelay, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE audit_dispatch_log
+            SET status = @status, result = @result, error = @error,
+                next_attempt_at = CASE WHEN @retrySeconds IS NULL THEN next_attempt_at
+                                       ELSE now() + (@retrySeconds || ' seconds')::interval END
+            WHERE id = @id
+            """, new { id, status, result, error, retrySeconds = retryDelay is { } d ? (int?)d.TotalSeconds : null }, cancellationToken: ct))
+            .ConfigureAwait(false);
+    }
 }

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Audit-dispatch script — invoked by Workstream's AuditDispatchWorker once per queued
+# audit (the request_audit MCP tool enqueues one row per project). The worker passes the
+# project as environment variables and expects this script to launch that project's
+# audit orchestrator.
+#
+# To enable, set on the api container (or its sidecar):
+#   WORKSTREAM_AUDIT_DISPATCH_ENABLED=true
+#   WORKSTREAM_AUDIT_DISPATCH_SCRIPT=/srv/workstream-mcp/deploy/audit-dispatch.sh
+# then copy this file to audit-dispatch.sh and adjust REPOS_DIR and the launch command.
+#
+# Environment provided by the worker:
+#   WS_PROJECT_ID    project uuid
+#   WS_PROJECT_SLUG  project slug (used as the local checkout dir name)
+#   WS_REPO_OWNER    GitHub owner of the project's primary repo
+#   WS_REPO_NAME     GitHub repo name
+#
+# A non-zero exit tells the worker the dispatch failed; it retries with backoff.
+
+set -euo pipefail
+
+REPOS_DIR="${WS_REPOS_DIR:-/srv/audit-repos}"
+slug="${WS_PROJECT_SLUG:?missing WS_PROJECT_SLUG}"
+repo_dir="${REPOS_DIR}/${slug}"
+
+echo "[audit-dispatch] project=${slug} repo=${WS_REPO_OWNER:-?}/${WS_REPO_NAME:-?}"
+
+# Clone on first run, otherwise fast-forward to latest.
+if [[ ! -d "${repo_dir}/.git" ]]; then
+  if [[ -z "${WS_REPO_OWNER:-}" || -z "${WS_REPO_NAME:-}" ]]; then
+    echo "[audit-dispatch] no repo registered for ${slug}; add one with add_project_repo" >&2
+    exit 1
+  fi
+  echo "[audit-dispatch] cloning ${WS_REPO_OWNER}/${WS_REPO_NAME}"
+  git clone "https://github.com/${WS_REPO_OWNER}/${WS_REPO_NAME}.git" "${repo_dir}"
+fi
+
+cd "${repo_dir}"
+git pull --ff-only
+
+# Launch the project's audit orchestrator headlessly. The orchestrator (the project's
+# own /audit-run command) talks back to Workstream to create the audit plan and tasks.
+exec claude -p "/audit-run"

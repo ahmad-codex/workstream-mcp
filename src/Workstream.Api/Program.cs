@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.Options;
+using Workstream.Api.Dispatch;
 using Workstream.Api.Endpoints;
 using Workstream.Api.Mcp;
 using Workstream.Api.Middleware;
@@ -72,6 +73,17 @@ builder.Services.Configure<SlackAppOptions>(o =>
     o.SigningSecret = ResolveSecret(builder.Configuration,
         "WORKSTREAM_SLACK_SIGNING_SECRET", "WORKSTREAM_SLACK_SIGNING_SECRET_FILE");
 });
+
+// ----- Audit dispatch -----
+builder.Services.Configure<AuditDispatchOptions>(o =>
+{
+    o.Enabled    = string.Equals(builder.Configuration["WORKSTREAM_AUDIT_DISPATCH_ENABLED"],
+                                  "true", StringComparison.OrdinalIgnoreCase);
+    o.ScriptPath = builder.Configuration["WORKSTREAM_AUDIT_DISPATCH_SCRIPT"] ?? "";
+    if (int.TryParse(builder.Configuration["WORKSTREAM_AUDIT_DISPATCH_TIMEOUT"], out var t)) o.TimeoutSeconds = t;
+});
+builder.Services.AddSingleton<IAuditRunner, ProcessAuditRunner>();
+builder.Services.AddHostedService<AuditDispatchWorker>();
 
 // ----- MCP tools -----
 builder.Services.AddWorkstreamMcpTools();
