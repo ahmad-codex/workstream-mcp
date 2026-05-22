@@ -56,6 +56,19 @@ fi
 git "${git_auth[@]}" -C "${repo_dir}" pull --ff-only \
   || echo "[audit-dispatch] pull skipped (non-ff or offline)"
 
+# Pre-seed ~/.claude.json so Claude Code's first-run wizard (theme / onboarding) and the
+# per-folder "do you trust this directory?" prompt never block the automated run. Auth
+# itself lives in the persisted ~/.claude/.credentials.json and is left untouched.
+node -e '
+  const fs = require("fs"), path = process.env.HOME + "/.claude.json";
+  let c = {}; try { c = JSON.parse(fs.readFileSync(path, "utf8")); } catch {}
+  c.theme = c.theme || "dark";
+  c.hasCompletedOnboarding = true;
+  c.projects = c.projects || {};
+  c.projects[process.argv[1]] = { ...(c.projects[process.argv[1]] || {}), trusted: true };
+  fs.writeFileSync(path, JSON.stringify(c, null, 2));
+' "${repo_dir}"
+
 # Launch the project's audit orchestrator in a detached, attachable tmux session.
 # The orchestrator (the project's own /audit-run command) talks back to Workstream to
 # create the audit plan and tasks.
