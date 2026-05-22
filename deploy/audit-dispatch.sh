@@ -36,10 +36,17 @@ echo "[audit-dispatch] action=${WS_ACTION:-run} project=${slug} repo=${WS_REPO_O
 
 # Cancel: signal the running audit to stop. The orchestrator owns the cleanup via its own
 # /audit-cancel command (releasing claims, discarding worktrees) — no hard kill.
+# Esc first: it interrupts whatever the orchestrator is mid-doing, so /audit-cancel runs
+# immediately instead of queueing behind an in-flight subagent. Two Esc presses ensure
+# the main loop (not just a nested view) is back at the prompt.
 if [[ "${WS_ACTION:-run}" == "cancel" ]]; then
   if tmux has-session -t "${session}" 2>/dev/null; then
+    tmux send-keys -t "${session}" Escape
+    sleep 3
+    tmux send-keys -t "${session}" Escape
+    sleep 4
     tmux send-keys -t "${session}" "/audit-cancel" Enter
-    echo "[audit-dispatch] sent /audit-cancel to session ${session}"
+    echo "[audit-dispatch] interrupted session ${session} and sent /audit-cancel"
   else
     echo "[audit-dispatch] no running audit session ${session}; nothing to cancel"
   fi
