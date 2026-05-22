@@ -171,18 +171,21 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         }, ct).ConfigureAwait(false);
     }
 
-    public async Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, string notificationType, RequestContext ctx, CancellationToken ct = default)
+    public async Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
         var project = await _projects.GetAsync(plan.ProjectId, ct).ConfigureAwait(false);
-        var body = FormatTemplate(pt.Row, notificationType, new Dictionary<string, string>
+        var tokens = new Dictionary<string, string>
         {
             ["actor"]     = ctx.DisplayActor,
             ["plan_name"] = plan.Name,
             ["project"]   = project?.DisplayName ?? plan.ProjectId.ToString(),
-        });
-        var blocks = BuildPlanBlocks(project?.DisplayName, plan, pt.Row, notificationType, ctx);
+        };
+        if (extraTokens is not null)
+            foreach (var kv in extraTokens) tokens[kv.Key] = kv.Value;
+        var body = FormatTemplate(pt.Row, notificationType, tokens);
+        var blocks = BuildPlanBlocks(project?.DisplayName, plan, pt.Row, notificationType, ctx, extraTokens);
         await _outbox.EnqueueSlackAsync(new SlackNotifyRow
         {
             ProjectId = plan.ProjectId, PlanId = plan.Id,
@@ -199,7 +202,8 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
     /// <c>View details</c> button. Keeps plan posts as informative as task / finding ones.
     /// </summary>
     private static string BuildPlanBlocks(
-        string? projectName, Plan plan, PlanType planType, string notificationType, RequestContext ctx)
+        string? projectName, Plan plan, PlanType planType, string notificationType, RequestContext ctx,
+        IReadOnlyDictionary<string, string>? extras)
     {
         var fields = new List<SlackBlockKitBuilder.Field>
         {
@@ -208,12 +212,20 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             new("Type", string.IsNullOrWhiteSpace(planType.DisplayName) ? plan.PlanTypeId : planType.DisplayName),
             new("Status", Humanize(plan.Status)),
         };
+        if (extras is not null && extras.TryGetValue("outcome", out var outcome) && !string.IsNullOrWhiteSpace(outcome))
+            fields.Add(new("Outcome", outcome));
+
+        var body = new List<string>();
+        if (!string.IsNullOrWhiteSpace(plan.Objective)) body.Add(plan.Objective!.Trim());
+        if (extras is not null && extras.TryGetValue("reason", out var reason) && !string.IsNullOrWhiteSpace(reason))
+            body.Add($"*Reason:* {reason}");
+
         var context = string.IsNullOrWhiteSpace(ctx.DisplayActor)
             ? null : $":bust_in_silhouette: {ctx.DisplayActor}";
         return SlackBlockKitBuilder.Build(
             HeaderFor(notificationType, null),
             fields, context,
-            string.IsNullOrWhiteSpace(plan.Objective) ? null : plan.Objective!.Trim(),
+            body.Count > 0 ? string.Join("\n\n", body) : null,
             DetailsButton(EntityType.Plan, plan.ProjectId, plan.Id));
     }
 

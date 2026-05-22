@@ -38,5 +38,6 @@ public interface ISlackNotifyEnqueue
         (PlanType Row, StateGraph Graph) planType,
         string notificationType,
         RequestContext ctx,
+        IReadOnlyDictionary<string, string>? extraTokens = null,
         CancellationToken ct = default);
 }

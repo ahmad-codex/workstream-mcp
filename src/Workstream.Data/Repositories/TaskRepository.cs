@@ -473,6 +473,14 @@ public sealed class TaskRepository : ITaskRepository
             new { taskId, boardItemId, boardItemNumber }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
+    public async Task SetGithubIssueAsync(Guid taskId, int issueNumber, string issueNodeId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tasks SET github_issue_number = @issueNumber, github_issue_node_id = @issueNodeId WHERE id = @taskId",
+            new { taskId, issueNumber, issueNodeId }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
     public async Task<long?> GetGithubBoardItemNumberAsync(Guid taskId, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);

@@ -218,4 +218,57 @@ public sealed class OutboxRepository : IOutboxRepository
             """, new { id, status, result, error, retrySeconds = retryDelay is { } d ? (int?)d.TotalSeconds : null }, cancellationToken: ct))
             .ConfigureAwait(false);
     }
+
+    // ------- Milestone sync outbox -------
+
+    public async Task<long> EnqueueMilestoneSyncAsync(Guid planId, string action, string? outcome, string? reason, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+            INSERT INTO milestone_sync_log (plan_id, action, outcome, reason)
+            VALUES (@planId, @action, @outcome, @reason)
+            RETURNING id
+            """, new { planId, action, outcome, reason }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MilestoneSyncRow>> ClaimMilestoneSyncBatchAsync(int batchSize, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        var sql = """
+            WITH next AS (
+                SELECT id FROM milestone_sync_log
+                WHERE result IN ('pending','retry') AND next_attempt_at <= now()
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT @batchSize
+            )
+            UPDATE milestone_sync_log m
+            SET attempts = attempts + 1, last_attempted_at = now(), result = 'pending'
+            FROM next
+            WHERE m.id = next.id
+            RETURNING m.id              AS Id,
+                      m.plan_id         AS PlanId,
+                      m.action          AS Action,
+                      m.outcome         AS Outcome,
+                      m.reason          AS Reason,
+                      m.attempts        AS Attempts,
+                      m.next_attempt_at AS NextAttemptAt,
+                      m.result          AS Result
+            """;
+        var rows = await conn.QueryAsync<MilestoneSyncRow>(new CommandDefinition(sql, new { batchSize }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    public async Task MarkMilestoneSyncResultAsync(long id, string result, string? error, TimeSpan? retryDelay, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE milestone_sync_log
+            SET result = @result, error = @error,
+                next_attempt_at = CASE WHEN @retrySeconds IS NULL THEN next_attempt_at
+                                       ELSE now() + (@retrySeconds || ' seconds')::interval END
+            WHERE id = @id
+            """, new { id, result, error, retrySeconds = retryDelay is { } d ? (int?)d.TotalSeconds : null }, cancellationToken: ct))
+            .ConfigureAwait(false);
+    }
 }

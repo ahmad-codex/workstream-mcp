@@ -170,7 +170,8 @@ public sealed class ArchivePlanToolTests : IClassFixture<PostgresFixture>
     }
 
     private ArchivePlanTool NewArchiveTool(PlanRepository plans) =>
-        new(plans, new NullPlanTypeCache(), new EventRepository(_pg.ConnectionFactory), new NullSlackNotify());
+        new(plans, new NullPlanTypeCache(), new EventRepository(_pg.ConnectionFactory), new NullSlackNotify(),
+            new OutboxRepository(_pg.ConnectionFactory));
 
     private static RequestContext Ctx(Guid actorId, bool canArchivePlan = false, bool isAdmin = false) =>
         // (actorId, actorType, githubUsername, isAdmin, canOverrideVerdict, canArchivePlan, canMarkNeedsHumanReview, traceId, now)
@@ -219,7 +220,8 @@ public sealed class ArchivePlanToolTests : IClassFixture<PostgresFixture>
             CancellationToken ct = default) => Task.CompletedTask;
 
         public Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) planType,
-            string notificationType, RequestContext ctx, CancellationToken ct = default) => Task.CompletedTask;
+            string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null,
+            CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class NullBoardSync : IBoardSyncEnqueue

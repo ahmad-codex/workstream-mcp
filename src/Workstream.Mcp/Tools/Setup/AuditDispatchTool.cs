@@ -13,7 +13,8 @@ namespace Workstream.Mcp.Tools.Setup;
 
 public sealed record RequestAuditInput(string[] Projects);
 
-public sealed record RequestAuditResult(string Project, string Status, long? DispatchId, Guid? ProjectId);
+public sealed record RequestAuditResult(
+    string Project, string Status, long? DispatchId, Guid? ProjectId, string? AttachCommand = null);
 public sealed record RequestAuditOutput(IReadOnlyList<RequestAuditResult> Results);
 
 /// <summary>
@@ -38,9 +39,9 @@ public sealed class RequestAuditTool : McpTool<RequestAuditInput, RequestAuditOu
         "Admin: request a full audit run for one or more projects. Pass `projects` as a list " +
         "of project slugs or ids. Each is resolved and queued on the audit-dispatch outbox; a " +
         "background worker then launches that project's audit orchestrator (no repo checkout by " +
-        "the caller). The result lists each project with status 'queued' (a dispatch id is " +
-        "returned) or 'unknown_project' (the name did not resolve). Use this as the single entry " +
-        "point for \"run full audit on X\" across the fleet.";
+        "the caller). The result lists each project with status 'queued' (with a dispatch id and " +
+        "an `attach_command` — the command to watch the live audit session once SSH'd into the " +
+        "server) or 'unknown_project' (the name did not resolve).";
 
     protected override async Task<RequestAuditOutput> RunAsync(RequestAuditInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -60,7 +61,8 @@ public sealed class RequestAuditTool : McpTool<RequestAuditInput, RequestAuditOu
             }
 
             var dispatchId = await _outbox.EnqueueAuditDispatchAsync(project.Id, ctx.ActorId, "run", ct).ConfigureAwait(false);
-            results.Add(new RequestAuditResult(project.Slug, "queued", dispatchId, project.Id));
+            var attach = $"docker exec -it deploy-dispatcher-1 tmux attach -t audit-{project.Slug}";
+            results.Add(new RequestAuditResult(project.Slug, "queued", dispatchId, project.Id, attach));
         }
         return new RequestAuditOutput(results);
     }

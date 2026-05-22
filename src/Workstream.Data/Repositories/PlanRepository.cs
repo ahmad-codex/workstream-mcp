@@ -24,6 +24,7 @@ public sealed class PlanRepository : IPlanRepository
         primary_board_id AS "PrimaryBoardId",
         primary_slack_channel_id AS "PrimarySlackChannelId",
         config::text AS "Config",
+        github_milestone_number AS "GithubMilestoneNumber",
         created_at AS "CreatedAt",
         activated_at AS "ActivatedAt",
         completed_at AS "CompletedAt"
@@ -68,6 +69,14 @@ public sealed class PlanRepository : IPlanRepository
         return await conn.QuerySingleAsync<Plan>(new CommandDefinition(sql,
             new { projectId, planTypeId, name, objective, createdByActorId, primaryBoardId, primarySlackChannelId },
             cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task SetMilestoneNumberAsync(Guid planId, int milestoneNumber, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE plans SET github_milestone_number = @milestoneNumber WHERE id = @planId",
+            new { planId, milestoneNumber }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<Plan?> SetStatusAsync(Guid id, string newStatus, CancellationToken ct = default)

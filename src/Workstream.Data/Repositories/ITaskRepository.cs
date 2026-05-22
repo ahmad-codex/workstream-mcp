@@ -111,6 +111,9 @@ public interface ITaskRepository
     /// </summary>
     Task SetGithubBoardItemIdAsync(Guid taskId, string boardItemId, long? boardItemNumber, CancellationToken ct = default);
 
+    /// <summary>Record the GitHub repo issue (number + node id) created for this task.</summary>
+    Task SetGithubIssueAsync(Guid taskId, int issueNumber, string issueNodeId, CancellationToken ct = default);
+
     /// <summary>Return the numeric databaseId previously stored for this task, or null.</summary>
     Task<long?> GetGithubBoardItemNumberAsync(Guid taskId, CancellationToken ct = default);
 

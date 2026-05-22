@@ -14,6 +14,7 @@ public sealed record Plan
     public Guid?   PrimaryBoardId         { get; init; }
     public string? PrimarySlackChannelId  { get; init; }
     public string  Config                 { get; init; } = "{}";
+    public int?    GithubMilestoneNumber  { get; init; }
     public DateTimeOffset  CreatedAt      { get; init; }
     public DateTimeOffset? ActivatedAt    { get; init; }
     public DateTimeOffset? CompletedAt    { get; init; }

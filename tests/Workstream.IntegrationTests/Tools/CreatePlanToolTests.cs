@@ -81,7 +81,7 @@ public sealed class CreatePlanToolTests : IClassFixture<PostgresFixture>
     {
         var (projectId, actorId) = await SeedProjectAsync().ConfigureAwait(false);
 
-        var tool = new CreatePlanTool(new PlanRepository(_pg.ConnectionFactory), new ProjectRepository(_pg.ConnectionFactory));
+        var tool = new CreatePlanTool(new PlanRepository(_pg.ConnectionFactory), new ProjectRepository(_pg.ConnectionFactory), new OutboxRepository(_pg.ConnectionFactory));
         var result = await ((IMcpTool)tool).ExecuteAsync(
             new CreatePlanInput(projectId, "audit", "Audit pass"),
             Ctx(actorId, isAdmin: false), CancellationToken.None).ConfigureAwait(false);
@@ -92,7 +92,7 @@ public sealed class CreatePlanToolTests : IClassFixture<PostgresFixture>
 
     private async Task<ToolResult> RunAsync(CreatePlanInput input, Guid actorId)
     {
-        var tool = new CreatePlanTool(new PlanRepository(_pg.ConnectionFactory), new ProjectRepository(_pg.ConnectionFactory));
+        var tool = new CreatePlanTool(new PlanRepository(_pg.ConnectionFactory), new ProjectRepository(_pg.ConnectionFactory), new OutboxRepository(_pg.ConnectionFactory));
         return await ((IMcpTool)tool).ExecuteAsync(input, Ctx(actorId, isAdmin: true), CancellationToken.None).ConfigureAwait(false);
     }
 

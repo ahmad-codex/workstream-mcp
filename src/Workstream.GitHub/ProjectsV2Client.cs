@@ -296,6 +296,94 @@ public sealed class ProjectsV2Client
         return new SingleSelectFieldInfo(idEl.GetString()!, options);
     }
 
+    // ===== Milestones & issues (REST) — audit runs create a milestone and real issues =====
+
+    /// <summary>Create an open repo milestone; returns its number.</summary>
+    public async Task<int> CreateMilestoneAsync(string owner, string repo, string title, string? description, CancellationToken ct = default)
+    {
+        using var resp = await SendRestAsync(HttpMethod.Post, $"repos/{owner}/{repo}/milestones",
+            new { title, description = description ?? "", state = "open" }, ct).ConfigureAwait(false);
+        return resp.RootElement.GetProperty("number").GetInt32();
+    }
+
+    /// <summary>Patch a milestone — used to close it with an outcome-suffixed title + reason.</summary>
+    public async Task UpdateMilestoneAsync(string owner, string repo, int number,
+        string? title = null, string? description = null, string? state = null, CancellationToken ct = default)
+    {
+        var body = new Dictionary<string, object?>();
+        if (title is not null)       body["title"] = title;
+        if (description is not null) body["description"] = description;
+        if (state is not null)       body["state"] = state;
+        if (body.Count == 0) return;
+        using var _ = await SendRestAsync(HttpMethod.Patch, $"repos/{owner}/{repo}/milestones/{number}", body, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Fetch a milestone's current title (so a close can append the outcome suffix once).</summary>
+    public async Task<string?> GetMilestoneTitleAsync(string owner, string repo, int number, CancellationToken ct = default)
+    {
+        using var resp = await SendRestAsync(HttpMethod.Get, $"repos/{owner}/{repo}/milestones/{number}", null, ct)
+            .ConfigureAwait(false);
+        return resp.RootElement.TryGetProperty("title", out var t) ? t.GetString() : null;
+    }
+
+    /// <summary>Create a repo issue, optionally assigned to a milestone; returns its number + node id.</summary>
+    public async Task<IssueResult> CreateIssueAsync(string owner, string repo, string title, string body,
+        int? milestoneNumber, CancellationToken ct = default)
+    {
+        var payload = new Dictionary<string, object?> { ["title"] = title, ["body"] = body };
+        if (milestoneNumber is { } m) payload["milestone"] = m;
+        using var resp = await SendRestAsync(HttpMethod.Post, $"repos/{owner}/{repo}/issues", payload, ct)
+            .ConfigureAwait(false);
+        return new IssueResult(
+            resp.RootElement.GetProperty("number").GetInt32(),
+            resp.RootElement.GetProperty("node_id").GetString()!);
+    }
+
+    /// <summary>Patch an issue: body, state (open/closed), and/or assignee logins.</summary>
+    public async Task UpdateIssueAsync(string owner, string repo, int number,
+        string? body = null, string? state = null, IReadOnlyList<string>? assignees = null, CancellationToken ct = default)
+    {
+        var payload = new Dictionary<string, object?>();
+        if (body is not null)      payload["body"] = body;
+        if (state is not null)     payload["state"] = state;
+        if (assignees is not null) payload["assignees"] = assignees;
+        if (payload.Count == 0) return;
+        using var _ = await SendRestAsync(HttpMethod.Patch, $"repos/{owner}/{repo}/issues/{number}", payload, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Add an existing issue (by node id) to a Projects V2 board; returns the item node id + databaseId.</summary>
+    public async Task<DraftItemResult> AddIssueToProjectAsync(string projectNodeId, string issueNodeId, CancellationToken ct = default)
+    {
+        const string query = """
+            mutation($projectId: ID!, $contentId: ID!) {
+              addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                item { id databaseId }
+              }
+            }
+            """;
+        var resp = await SendAsync(query, new { projectId = projectNodeId, contentId = issueNodeId }, ct).ConfigureAwait(false);
+        var item = resp.RootElement.GetProperty("data").GetProperty("addProjectV2ItemById").GetProperty("item");
+        return new DraftItemResult(item.GetProperty("id").GetString()!, item.GetProperty("databaseId").GetInt64());
+    }
+
+    private async Task<JsonDocument> SendRestAsync(HttpMethod method, string path, object? body, CancellationToken ct)
+    {
+        var token = await _auth.GetInstallationTokenAsync(ct).ConfigureAwait(false);
+        using var req = new HttpRequestMessage(method, path);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (body is not null) req.Content = JsonContent.Create(body);
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        var content = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _log?.LogWarning("GitHub REST non-2xx: {Method} {Path} {Status} {Body}", method, path, resp.StatusCode, content);
+            throw new HttpRequestException($"GitHub REST {method} {path} returned {(int)resp.StatusCode}: {content}");
+        }
+        return JsonDocument.Parse(string.IsNullOrWhiteSpace(content) ? "{}" : content);
+    }
+
     private async Task<JsonDocument> SendAsync(string query, object variables, CancellationToken ct)
     {
         var token = await _auth.GetInstallationTokenAsync(ct).ConfigureAwait(false);
@@ -326,6 +414,9 @@ public sealed record BoardDiscoveryResult(
     IReadOnlyDictionary<string, string> StatusOptions);
 
 public sealed record DraftItemResult(string NodeId, long DatabaseId);
+
+/// <summary>A created repo issue: its number and GraphQL node id.</summary>
+public sealed record IssueResult(int Number, string NodeId);
 
 /// <summary>A Projects V2 single-select field: its node id and option name→id map.</summary>
 public sealed record SingleSelectFieldInfo(

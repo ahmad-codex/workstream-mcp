@@ -153,9 +153,10 @@ public sealed class CreatePlanTool : McpTool<CreatePlanInput, CreatePlanOutput>
 {
     private readonly IPlanRepository _repo;
     private readonly IProjectRepository _projects;
-    public CreatePlanTool(IPlanRepository repo, IProjectRepository projects)
+    private readonly IOutboxRepository _outbox;
+    public CreatePlanTool(IPlanRepository repo, IProjectRepository projects, IOutboxRepository outbox)
     {
-        _repo = repo; _projects = projects;
+        _repo = repo; _projects = projects; _outbox = outbox;
     }
     public override string Name => "create_plan";
     public override string Description =>
@@ -186,6 +187,12 @@ public sealed class CreatePlanTool : McpTool<CreatePlanInput, CreatePlanOutput>
 
         var p = await _repo.CreateAsync(input.ProjectId, input.PlanType, input.Name, input.Objective,
             ctx.ActorId, boardId, input.PrimarySlackChannelId, ct).ConfigureAwait(false);
+
+        // An audit plan gets a GitHub milestone for its run — the BoardSyncWorker creates
+        // it (timestamped) and the plan's tasks become issues assigned to it.
+        if (string.Equals(input.PlanType, "audit", StringComparison.OrdinalIgnoreCase))
+            await _outbox.EnqueueMilestoneSyncAsync(p.Id, "create", null, null, ct).ConfigureAwait(false);
+
         return new CreatePlanOutput(p.Id, p.Status, p.PrimaryBoardId);
     }
 }
@@ -266,7 +273,7 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
             }
         }
 
-        await _slack.EnqueueForPlanAsync(plan, pt, "plan.activated", ctx, ct).ConfigureAwait(false);
+        await _slack.EnqueueForPlanAsync(plan, pt, "plan.activated", ctx, ct: ct).ConfigureAwait(false);
         return new ActivatePlanOutput(plan.Id, plan.Status, enqueued);
     }
 }
@@ -275,8 +282,8 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
 // archive_plan
 // ============================================================================
 
-public sealed record ArchivePlanInput(Guid PlanId, string? Reason = null);
-public sealed record ArchivePlanOutput(Guid Id, string Status, bool AlreadyArchived);
+public sealed record ArchivePlanInput(Guid PlanId, string? Reason = null, string? Outcome = null);
+public sealed record ArchivePlanOutput(Guid Id, string Status, string Outcome, bool AlreadyArchived);
 
 public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutput>
 {
@@ -284,11 +291,12 @@ public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutpu
     private readonly IPlanTypeCache _planTypes;
     private readonly IEventRepository _events;
     private readonly ISlackNotifyEnqueue _slack;
+    private readonly IOutboxRepository _outbox;
 
     public ArchivePlanTool(IPlanRepository plans, IPlanTypeCache planTypes,
-        IEventRepository events, ISlackNotifyEnqueue slack)
+        IEventRepository events, ISlackNotifyEnqueue slack, IOutboxRepository outbox)
     {
-        _plans = plans; _planTypes = planTypes; _events = events; _slack = slack;
+        _plans = plans; _planTypes = planTypes; _events = events; _slack = slack; _outbox = outbox;
     }
 
     public override string Name => "archive_plan";
@@ -300,8 +308,10 @@ public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutpu
         "time an orchestrator bootstraps it will find no active plan of that type and create a fresh " +
         "one, which is how you start a new audit/development pass on demand. Archiving is one-way " +
         "(there is no un-archive) and idempotent; the plan's tasks, events, and board cards are left " +
-        "intact for forensics. Posts a plan.archived Slack notice. Returns the plan id, its new " +
-        "status, and already_archived (true when the plan was already archived and nothing changed).";
+        "intact for forensics. The `outcome` is 'Completed' (default) or 'Canceled' — it suffixes " +
+        "the audit milestone's title when it is closed and shows on the Slack notice, alongside the " +
+        "`reason`. Posts a plan.archived Slack notice. Returns the plan id, its new status, the " +
+        "resolved outcome, and already_archived (true when the plan was already archived).";
 
     protected override async Task<ArchivePlanOutput> RunAsync(ArchivePlanInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -311,27 +321,38 @@ public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutpu
         var plan = await _plans.GetAsync(input.PlanId, ct).ConfigureAwait(false)
                    ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
 
+        // 'Canceled' only when explicitly asked; anything else (incl. null) is 'Completed'.
+        var outcome = string.Equals(input.Outcome, "Canceled", StringComparison.OrdinalIgnoreCase)
+            ? "Canceled" : "Completed";
+
         // Idempotent: archiving an already-archived plan changes nothing — no event, no Slack.
         if (plan.Status == PlanStatus.Archived)
-            return new ArchivePlanOutput(plan.Id, plan.Status, AlreadyArchived: true);
+            return new ArchivePlanOutput(plan.Id, plan.Status, outcome, AlreadyArchived: true);
 
         var previousStatus = plan.Status;
         var archived = await _plans.SetStatusAsync(input.PlanId, PlanStatus.Archived, ct).ConfigureAwait(false)
                        ?? throw new WorkstreamException(WorkstreamError.NotFound("plan"));
 
         // The events table is append-only and load-bearing for forensics: record who
-        // archived the plan, the status it came from, and the operator's reason.
+        // archived the plan, the status it came from, the operator's reason and outcome.
         var reason = string.IsNullOrWhiteSpace(input.Reason) ? null : input.Reason!.Trim();
         await _events.EmitAsync(
             ctx.ActorId, EntityType.Plan, archived.Id, "archived",
             fromState: previousStatus, toState: PlanStatus.Archived,
-            payloadJson: JsonSerializer.Serialize(new { reason }), ct).ConfigureAwait(false);
+            payloadJson: JsonSerializer.Serialize(new { reason, outcome }), ct).ConfigureAwait(false);
+
+        // Close the plan's GitHub milestone with the outcome suffix + reason (via outbox).
+        await _outbox.EnqueueMilestoneSyncAsync(archived.Id, "close", outcome, reason, ct).ConfigureAwait(false);
 
         // Best-effort Slack — a missing plan-type must not fail the archive itself.
         var pt = await _planTypes.GetAsync(archived.PlanTypeId, ct).ConfigureAwait(false);
         if (pt is not null)
-            await _slack.EnqueueForPlanAsync(archived, pt.Value, "plan.archived", ctx, ct).ConfigureAwait(false);
+        {
+            var extra = new Dictionary<string, string> { ["outcome"] = outcome };
+            if (reason is not null) extra["reason"] = reason;
+            await _slack.EnqueueForPlanAsync(archived, pt.Value, "plan.archived", ctx, extra, ct).ConfigureAwait(false);
+        }
 
-        return new ArchivePlanOutput(archived.Id, archived.Status, AlreadyArchived: false);
+        return new ArchivePlanOutput(archived.Id, archived.Status, outcome, AlreadyArchived: false);
     }
 }
