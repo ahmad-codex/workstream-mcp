@@ -43,7 +43,7 @@ RUN apt-get update \
 # under root. The .NET worker still runs as root (it must read root:root Docker secrets);
 # the dispatch script drops to this user, via runuser, only for the `claude` process.
 # safe.directory='*' lets root run git inside the auditor-owned repo checkouts.
-RUN useradd --create-home --uid 1000 auditor \
+RUN useradd --create-home auditor \
  && mkdir -p /home/auditor/.claude \
  && chown -R auditor:auditor /home/auditor \
  && git config --system --add safe.directory '*'
