@@ -1,6 +1,13 @@
 # Deployment
 
-Two containers on a Hetzner host: `postgres` and `api`, behind Caddy for TLS (§12).
+Containers on a Hetzner host, behind a TLS reverse proxy (§12):
+
+| Container | Role |
+|---|---|
+| `postgres`   | Postgres 16 — the state store |
+| `pgbouncer`  | Transaction-pool connection multiplexer |
+| `api`        | The MCP server + background workers (board sync, Slack, audit dispatch is idle here) |
+| `dispatcher` | Same image as `api` run with `WORKSTREAM_ROLE=dispatcher` — runs only the audit-dispatch worker; carries git, tmux and Claude Code. See [audit-dispatch.md](./audit-dispatch.md) |
 
 ## One-time setup
 
@@ -15,13 +22,19 @@ Drop the following into `deploy/secrets/` (the `.gitignore` excludes everything 
 
 | File | Contents |
 |---|---|
-| `pg_password`        | Postgres password (single line, no trailing newline) |
-| `admin_token`        | Static bearer for `/admin/*` |
-| `gh_app_key.pem`     | GitHub App private key |
-| `gh_webhook_secret`  | GitHub webhook signing secret |
-| `slack-<project>`    | One per project — the Slack bot token |
+| `pg_password`           | Postgres password (single line, no trailing newline) |
+| `admin_token`           | Static bearer for `/admin/*` |
+| `gh_app_key.pem`        | GitHub App private key |
+| `gh_webhook_secret`     | GitHub webhook signing secret |
+| `slack-<project>`       | One per project — the Slack bot token |
+| `slack_signing_secret`  | Slack app signing secret — verifies inbound interactivity (the "View details" modal) |
+| `gh_clone_token`        | GitHub token the dispatcher uses to clone private project repos |
+| `ssh_mcp_key`           | SSH private key for the dispatcher's `hetzner-moelabs` MCP |
+| `ssh_mcp_passphrase`    | Passphrase for `ssh_mcp_key` |
 
-Update `deploy/docker-compose.yml` to list any additional Slack secrets you add.
+Update `deploy/docker-compose.yml` to list any additional Slack secrets you add. The
+`slack_signing_secret`, `gh_clone_token`, `ssh_mcp_key` and `ssh_mcp_passphrase` secrets
+are only needed once the audit dispatcher and Slack interactivity are in use.
 
 ## Caddy config
 
@@ -44,11 +57,17 @@ The full template is [`deploy/Caddyfile`](../deploy/Caddyfile).
 
 ## Bring it up
 
+Always deploy with **both** compose files — the base plus the production overlay:
+
 ```bash
 cd workstream-mcp
-docker compose -f deploy/docker-compose.yml build
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
 ```
+
+`docker-compose.prod.yml` adds the public `0.0.0.0:3010` binding and the prod base URL.
+Deploying with the base file alone binds the api to `127.0.0.1` only — the public
+endpoint silently goes dark. The redeploy step on the host is `git pull --ff-only` then
+the command above.
 
 The API container runs migrations on startup (the `SqlMigrationRunner` in `Workstream.Data/Migrations/` applies `deploy/migrations/*.sql` in numeric order). Re-running is a no-op when versions are already in `__migrations`.
 
@@ -74,6 +93,12 @@ Per-project setup walkthrough (Slack app creation, scopes, channel invite, token
 ## GitHub Projects V2 board
 
 Per-project board wiring (App creation under your org, permissions, install + IDs, board discover, plan binding, end-to-end test) in [`github-setup.md`](./github-setup.md).
+
+## Audit dispatcher
+
+The `dispatcher` container runs full audits across projects from a single `request_audit`
+call. Its architecture, configuration, secrets, and the one-time Claude Code login are in
+[`audit-dispatch.md`](./audit-dispatch.md).
 
 ## Backups
 

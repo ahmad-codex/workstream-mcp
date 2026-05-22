@@ -110,6 +110,23 @@ docker compose -f deploy/docker-compose.yml exec -T postgres `
 
 A row with `result = success` and a populated `slack_ts` confirms the round trip worked.
 
+## Interactivity — the "View details" modal
+
+Notification cards carry a **View details** button that opens a modal with the full
+task / finding / plan detail. This is **app-level** setup (one Slack app, shared across
+every workspace), done once — not per project:
+
+1. Copy the app's signing secret from **api.slack.com → your app → Basic Information →
+   Signing Secret** into `deploy/secrets/slack_signing_secret`, then recreate the api
+   container so it is mounted.
+2. On **api.slack.com → your app → Interactivity & Shortcuts**: toggle Interactivity on
+   and set the Request URL to `https://<host>/webhooks/slack/interactivity`, then Save.
+
+The endpoint verifies Slack's request signature (HMAC over `v0:{timestamp}:{body}`, with
+a 5-minute replay window) and opens the modal via `views.open`. It is exempt from the
+URL-token middleware — the signature is the auth. Without the signing secret configured
+every inbound click is rejected with 401 and the button is simply inert.
+
 ## Notification taxonomy (which events post)
 
 Each plan type's `default_notify_on` array decides which events produce Slack notifications. Defaults are in [`deploy/profiles/audit.json`](../deploy/profiles/audit.json) and [`deploy/profiles/development.json`](../deploy/profiles/development.json). The list per project can be overridden by setting `project_slack.notify_on`.
@@ -129,20 +146,32 @@ Each plan type's `default_notify_on` array decides which events produce Slack no
 | `plan.activated` | on | on |
 | `plan.completed` | on | on |
 
+## Card layout
+
+Each notification posts as a **Block Kit card**: a header with a lifecycle emoji, a
+two-column field grid (Project / Plan / Task / Status, plus Severity for findings), a
+description / reason body, a context line identifying the actor, and a primary **View
+details** button. Plan, task and finding notifications all use this layout; the plain
+text body is kept as the notification fallback.
+
 ## Actor identity (who a post is attributed to)
 
-Every task/finding post carries an identity. By default it follows the **calling actor's `actor_type`**:
+Every task/finding post carries an identity in the card's context line. By default it
+follows the **calling actor's `actor_type`**:
 
-- `human` — the post shows the person's display name, role label, a `Human` tag, and their GitHub avatar (`github.com/<login>.png`) in the attachment author row.
-- `orchestrator` / `subagent` — the post shows the plan-type's role persona for that event, an `AI Agent` tag, and a role-coloured bar.
+- `human` — the context line shows the person's display name, role label and a `Human` tag.
+- `orchestrator` / `subagent` — the context line shows the plan-type's role persona for that event and an `AI Agent` tag.
 
 A tool call may override this with an optional **`as_agent`** field in its `arguments`, naming the role the call acts for (e.g. `"auditor"`). When present, the post renders that role's persona — the role label plus an agent name drawn from a per-role pool — and the `AI Agent` tag, even when the URL token belongs to a human. The name is picked deterministically from the work item's id (task id for auditor/developer posts, finding id for verifier/fixer/fix-verifier), so every post for one item shows the same name while parallel items read as distinct agents. This is how an orchestrator that shares a human's token still posts as the role persona. It is display-only: the `events` table always records the real actor.
 
 The persona and colour come from the plan profile's `role_personas`; without `as_agent` the role is derived from `slack_roles` (notification type → role).
 
-## Threading
+## Posts are top-level
 
-Multi-step lifecycles (a task moving through `claimed` → `in_progress` → `review` → `done`) thread under a single parent post. The first message for an entity is the root; subsequent messages reply in the thread. `slack_notify_log.thread_ts` carries the parent slack_ts so threading survives worker restarts.
+Per operator preference, each state change is its own top-level post — notifications do
+**not** thread under a parent. The spec's threaded design (§8.4) is preserved as data
+(the first `slack_ts` is still recorded on `slack_notify_log`) but no thread replies are
+sent.
 
 ## Troubleshooting
 

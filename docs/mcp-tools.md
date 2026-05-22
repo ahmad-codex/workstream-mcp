@@ -41,7 +41,7 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 |---|---|
 | `mark_task_status` | Set deferred/blocked/skipped/out_of_scope/needs_human_review |
 | `record_commit` | Attach a commit hash after the fact |
-| `create_task` | Create a new task (orchestrator decomposition). Board sync always fires; `notify_slack` defaults to **false** (opt-in) |
+| `create_task` | Create a new task (orchestrator decomposition). Board sync always fires (a GitHub issue on a repo-backed project, else a draft item); `notify_slack` defaults to **false** (opt-in) |
 | `create_tasks` | Bulk task creation for plan bootstrap. Board sync always fires; `notify_slack` defaults to **false** (opt-in) |
 | `override_verdict` | Force a state change without a claim — needs `can_override_verdict` |
 
@@ -61,9 +61,23 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 | `add_project_repo` | Attach a GitHub repo |
 | `add_project_board` | Register a GitHub Projects V2 board (with discovered option ids) |
 | `set_project_slack` | Configure Slack workspace + channel + bot-token secret ref |
-| `create_plan` | New plan (in draft). Inherits the project's board automatically when the project has exactly one registered; pass `primary_board_id` to disambiguate when there are several. A plan with no board never produces task cards |
+| `create_plan` | New plan (in draft). Inherits the project's board automatically when the project has exactly one registered; pass `primary_board_id` to disambiguate when there are several. A plan with no board never produces task cards. An `audit` plan also enqueues a GitHub milestone for its run |
 | `add_phase` | Add a phase to a plan |
 | `activate_plan` | Draft → active; enqueues board items for every task |
+| `archive_plan` | Disable a plan so it stops accepting work. Takes a `reason` and an `outcome` (`Completed` \| `Canceled`, default Completed); closes the plan's audit milestone with that outcome and surfaces the reason on the Slack notice. One-way and idempotent. Needs `can_archive_plan` |
+
+## Audit dispatch (§9.6, admin-gated)
+
+The central control surface for running audits across many projects from one place. See [audit-dispatch.md](./audit-dispatch.md) for the dispatcher architecture.
+
+| Tool | Purpose |
+|---|---|
+| `request_audit` | Queue a full audit run for one or more projects (by slug or id). A background dispatcher checks out each repo and launches its audit orchestrator. Returns per-project `queued` (with a dispatch id and an `attach_command` to watch the live session) or `unknown_project` |
+| `cancel_audit` | Queue a cancellation for one or more running audits. The dispatcher interrupts the session and sends `/audit-cancel` so the orchestrator runs its own cleanup (release claims, prune worktrees) rather than being hard-killed |
+
+## Tasks as GitHub issues
+
+For a project with a registered repo, `create_task` / `create_tasks` produce real GitHub **issues** assigned to the plan's audit milestone, then added to the Projects V2 board — status changes flip the board column *and* open/close the issue. A repo-less project keeps the legacy Projects V2 draft-item path. See [github-setup.md](./github-setup.md).
 
 ## The `as_agent` field (cross-cutting)
 

@@ -10,15 +10,19 @@ A .NET 10 ASP.NET Core service backed by Postgres 16 exposes an MCP server over 
 
 ```
 Workstream.Api          ASP.NET host: middleware (token resolution, rate limit, logging),
-                        /mcp JSON-RPC endpoint, /webhooks/github/projects, /admin/*.
+                        /mcp JSON-RPC endpoint, /webhooks/github/projects,
+                        /webhooks/slack/interactivity, /admin/*. Also the audit-dispatch
+                        worker + ProcessAuditRunner (run as a `dispatcher`-role replica).
 Workstream.Core         Domain entities (immutable records), state machine, claim primitives,
                         notification enqueue interfaces, errors. No I/O.
 Workstream.Data         Npgsql + Dapper repositories, SqlMigrationRunner, PostgresPlanTypeCache,
                         StuckWorkJob hosted service.
-Workstream.GitHub       GitHub App auth, ProjectsV2Client (GraphQL), BoardSyncWorker,
+Workstream.GitHub       GitHub App auth, ProjectsV2Client (GraphQL + REST: milestones,
+                        issues), BoardSyncWorker (board_sync_log + milestone_sync_log),
                         WebhookSignatureVerifier.
-Workstream.Slack        SlackClient (chat.postMessage), SlackNotifyWorker (outbox drain),
-                        per-project bot-token resolver.
+Workstream.Slack        SlackClient (chat.postMessage / views.open), SlackBlockKitBuilder +
+                        SlackModalBuilder, SlackNotifyWorker (outbox drain),
+                        SlackSignatureVerifier, per-project bot-token resolver.
 Workstream.Mcp          IMcpTool abstraction, all tool implementations, DI registration.
 Workstream.Telemetry    OTel bootstrap, WorkstreamMetrics registrations.
 tools/workstream-admin  Operator CLI: user/project/plan management, bootstrap apply.
@@ -28,7 +32,7 @@ tools/workstream-admin  Operator CLI: user/project/plan management, bootstrap ap
 
 1. **Claim is the only legitimate path to mutate a row.** Every mutation tool takes a claim token and validates inside the transaction. Override-style mutations are explicit (`override_verdict`, `mark_task_status`) and require permission flags.
 2. **State machine is data.** `plan_types.state_graph` JSONB. Adding a plan type is an `INSERT`, not a recompile. Resist hardcoding audit-specific transitions in C#.
-3. **Outboxes for every external call.** Anything that talks to GitHub or Slack goes through `board_sync_log` or `slack_notify_log`. Workers drain. MCP requests never wait on external APIs.
+3. **Outboxes for every external call.** Anything that talks to GitHub or Slack goes through an outbox table — `board_sync_log` (board items / issues), `milestone_sync_log` (audit milestones), `slack_notify_log` (notifications), `audit_dispatch_log` (audit run/cancel requests). Workers drain them. MCP requests never wait on external APIs. The one inbound exception is `/webhooks/slack/interactivity`, which must answer Slack within 3 s — it verifies the signature and opens the modal synchronously.
 4. **Append-only `events` and `verdicts`.** Postgres triggers block UPDATE/DELETE on these tables. Corrections are new rows.
 5. **URL token is a credential.** Logged paths redact it. Errors never echo it. The only emission point is the one-time admin response when creating or rotating a user.
 
@@ -92,4 +96,5 @@ submit_attempt                 ─────────────►  attem
 - State machine details: [`state-machine.md`](./state-machine.md).
 - MCP tool list: [`mcp-tools.md`](./mcp-tools.md).
 - Deployment recipe: [`deployment.md`](./deployment.md).
+- Audit dispatcher (run audits fleet-wide): [`audit-dispatch.md`](./audit-dispatch.md).
 - One-paste onboarding: [`onboarding.md`](./onboarding.md).

@@ -8,13 +8,14 @@ Build specification: [`workstream-mcp-spec.md`](./workstream-mcp-spec.md). The s
 
 - .NET 10, ASP.NET Core minimal API
 - Postgres 16 via Npgsql + Dapper
-- GitHub Projects V2 via Octokit.GraphQL.NET (V2 is GraphQL-only)
-- SlackNet for Slack notifications
-- Serilog → OpenTelemetry for logs/metrics/traces
-- FluentMigrator for schema
+- GitHub Projects V2 + Issues/Milestones via a thin raw GraphQL/REST client
+- A minimal raw Slack Web API client (`chat.postMessage`, `views.open`)
+- OpenTelemetry for logs/metrics/traces
+- Plain SQL migrations applied by a custom `SqlMigrationRunner`
 - xUnit + Testcontainers for tests
 
-Two containers in production: `postgres` and `api`. No PgBouncer at v1; revisit if pool waits become non-trivial.
+Production containers: `postgres`, `pgbouncer` (transaction-pool multiplexer), `api`, and
+`dispatcher` (the audit-dispatch sidecar). See [`docs/deployment.md`](./docs/deployment.md).
 
 ## Repository layout
 
@@ -38,7 +39,8 @@ deploy/
   profiles/               Plan-type JSON profiles
   postgres/, grafana/, prometheus/
 docs/
-  architecture.md, state-machine.md, mcp-tools.md, deployment.md, onboarding.md
+  architecture.md, state-machine.md, mcp-tools.md, deployment.md, onboarding.md,
+  github-setup.md, slack-setup.md, audit-dispatch.md
 ```
 
 ## Building locally
@@ -65,7 +67,7 @@ $env:WORKSTREAM_PUBLIC_BASE_URL = "http://localhost:8080"
 dotnet run --project src/Workstream.Api
 ```
 
-For the full container-based stack: `docker compose -f deploy/docker-compose.yml up`.
+For the full container-based stack: `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build` (both files — the prod overlay adds the public binding).
 
 ## Plug-and-play onboarding
 

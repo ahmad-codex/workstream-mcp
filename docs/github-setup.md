@@ -1,6 +1,13 @@
 # GitHub Projects V2 setup
 
-Per project. Once configured, every task transition pushes the card on a Projects V2 board (Backlog / In Progress / Review / Done) via the outbox worker (§7). Draft items are created lazily on the first transition — you do not need to pre-populate the board.
+Per project. Once configured, every task transition pushes the card on a Projects V2 board (Backlog / In Progress / Review / Done) via the outbox worker (§7).
+
+How a task appears on the board depends on whether the project has a registered repo:
+
+- **Repo-backed project** — each task is created as a real GitHub **issue** in the primary repo, assigned to the audit run's milestone, then added to the board. Status changes flip the board column *and* open/close the issue.
+- **Repo-less project** — a Projects V2 **draft item** is created lazily on the first transition (the legacy path).
+
+Either way you do not need to pre-populate the board.
 
 ## 1. Create the GitHub App (on your org)
 
@@ -127,9 +134,19 @@ ORDER BY id DESC LIMIT 5;
 
 Within ~2 seconds of `start_work`, a draft item should be visible on the GitHub board in **In Progress**. Subsequent transitions move the same card; the worker reads `github_board_item_id` rather than recreating items.
 
-## Lazy draft creation
+## Audit milestones
 
-Tasks created **before** a board is registered against the plan still get items — the worker creates the draft on the first transition that triggers a sync. You do not need to backfill or re-activate the plan after binding a board.
+An `audit` plan drives a GitHub repo **milestone** for its run:
+
+- `create_plan` (audit type) enqueues a milestone-create on `milestone_sync_log`. The `BoardSyncWorker` creates the milestone in the project's primary repo, titled `<plan name> (<UTC timestamp>)`. Its `created_at` is the run's start time. The number is stored on `plans.github_milestone_number`.
+- Every task on the plan becomes an issue assigned to that milestone.
+- `archive_plan` closes the milestone: GitHub's `closed_at` records the end time, the title gains a `— Completed` / `— Canceled` suffix (from the tool's `outcome`), and the reason goes in the description. GitHub milestones have no native "canceled" state, so the outcome is encoded in the title.
+
+The App needs **Repository permission → Issues: Read & write** (already in the permission list above) for issue and milestone writes.
+
+## Lazy item creation
+
+Tasks created **before** a board is registered against the plan still get items — the worker creates the issue (or draft) on the first transition that triggers a sync. You do not need to backfill or re-activate the plan after binding a board.
 
 ## How card titles in Slack become deep links
 
