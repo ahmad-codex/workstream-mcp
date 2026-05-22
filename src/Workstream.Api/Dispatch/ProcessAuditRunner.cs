@@ -39,6 +39,7 @@ public sealed class ProcessAuditRunner : IAuditRunner
             UseShellExecute = false,
         };
         psi.ArgumentList.Add(_opts.ScriptPath);
+        psi.Environment["WS_ACTION"]       = ctx.Action;
         psi.Environment["WS_PROJECT_ID"]   = ctx.ProjectId.ToString();
         psi.Environment["WS_PROJECT_SLUG"] = ctx.ProjectSlug;
         psi.Environment["WS_REPO_OWNER"]   = ctx.RepoOwner ?? "";
@@ -81,9 +82,12 @@ public sealed class ProcessAuditRunner : IAuditRunner
         }
 
         var tail = Tail(stderr.Length > 0 ? stderr.ToString() : stdout.ToString(), 500);
-        return proc.ExitCode == 0
-            ? new AuditRunResult(true, $"audit session launched for {ctx.ProjectSlug}", null)
-            : new AuditRunResult(false, null, $"dispatch script exited {proc.ExitCode}: {tail}");
+        if (proc.ExitCode != 0)
+            return new AuditRunResult(false, null, $"dispatch script exited {proc.ExitCode}: {tail}");
+        var summary = ctx.Action == "cancel"
+            ? $"audit cancel signalled for {ctx.ProjectSlug}"
+            : $"audit session launched for {ctx.ProjectSlug}";
+        return new AuditRunResult(true, summary, null);
     }
 
     private void TryKill(Process proc)

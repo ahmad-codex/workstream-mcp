@@ -9,10 +9,11 @@ namespace Workstream.Api.Dispatch;
 public sealed record RepoRef(string Owner, string Name);
 
 /// <summary>
-/// The project a queued audit dispatch should run against.
-/// <see cref="WorkstreamMcpToken"/> is the triggering user's MCP token — the audit runs
-/// on their behalf — and is a credential (never log it). <see cref="ReferenceRepos"/>
-/// are read-only repos the orchestrator wants checked out alongside the primary one.
+/// A queued audit dispatch. <see cref="Action"/> is <c>run</c> (launch the orchestrator)
+/// or <c>cancel</c> (signal a running one to stop). <see cref="WorkstreamMcpToken"/> is
+/// the triggering user's MCP token — the audit runs on their behalf — and is a credential
+/// (never log it). <see cref="ReferenceRepos"/> are read-only repos checked out alongside
+/// the primary one. For a <c>cancel</c> only <see cref="ProjectSlug"/> is meaningful.
 /// </summary>
 public sealed record AuditRunContext(
     Guid ProjectId,
@@ -20,7 +21,8 @@ public sealed record AuditRunContext(
     string? RepoOwner,
     string? RepoName,
     string? WorkstreamMcpToken,
-    IReadOnlyList<RepoRef> ReferenceRepos);
+    IReadOnlyList<RepoRef> ReferenceRepos,
+    string Action);
 
 /// <summary>Outcome of one dispatch run. <see cref="Summary"/> / <see cref="Error"/> are persisted on the outbox row.</summary>
 public sealed record AuditRunResult(bool Ok, string? Summary, string? Error);

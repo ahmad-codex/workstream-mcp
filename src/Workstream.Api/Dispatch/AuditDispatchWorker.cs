@@ -81,6 +81,24 @@ public sealed class AuditDispatchWorker : BackgroundService
                 return;
             }
 
+            // A 'cancel' row only needs the slug — the runner signals the live session.
+            if (string.Equals(row.Action, "cancel", StringComparison.OrdinalIgnoreCase))
+            {
+                var cancel = await _runner.RunAsync(
+                    new AuditRunContext(project.Id, project.Slug, null, null, null,
+                        Array.Empty<RepoRef>(), "cancel"), ct).ConfigureAwait(false);
+                if (cancel.Ok)
+                {
+                    _log.LogInformation("audit cancel signalled for {Slug}", project.Slug);
+                    await _outbox.MarkAuditDispatchResultAsync(row.Id, "success", cancel.Summary, null, null, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await FailOrRetryAsync(row, cancel.Error ?? "cancel failed", ct).ConfigureAwait(false);
+                }
+                return;
+            }
+
             // Prefer a working (non reference-only) repo as the primary; the rest are
             // reference checkouts the orchestrator wants alongside.
             var repos = await _projects.ListReposAsync(row.ProjectId, ct).ConfigureAwait(false);
@@ -97,7 +115,7 @@ public sealed class AuditDispatchWorker : BackgroundService
 
             var result = await _runner.RunAsync(
                 new AuditRunContext(project.Id, project.Slug, primary?.GithubOwner, primary?.GithubRepo,
-                    mcpToken, referenceRepos), ct)
+                    mcpToken, referenceRepos, "run"), ct)
                 .ConfigureAwait(false);
 
             if (result.Ok)

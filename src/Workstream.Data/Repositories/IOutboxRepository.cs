@@ -17,7 +17,7 @@ public interface IOutboxRepository
     Task MarkSlackResultAsync(long id, string result, string? error, string? slackTs, TimeSpan? retryDelay, CancellationToken ct = default);
     Task<string?> GetParentSlackTsAsync(string entityType, Guid entityId, CancellationToken ct = default);
 
-    Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, CancellationToken ct = default);
+    Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, string action = "run", CancellationToken ct = default);
     Task<IReadOnlyList<AuditDispatchRow>> ClaimAuditDispatchBatchAsync(int batchSize, CancellationToken ct = default);
     Task MarkAuditDispatchResultAsync(long id, string status, string? result, string? error, TimeSpan? retryDelay, CancellationToken ct = default);
 }
@@ -71,12 +71,13 @@ public sealed record SlackNotifyRow
     public string  Result           { get; init; } = "pending";
 }
 
-/// <summary>One queued audit-dispatch request: launch a project's audit orchestrator.</summary>
+/// <summary>One queued audit-dispatch request: run or cancel a project's audit.</summary>
 public sealed record AuditDispatchRow
 {
     public long     Id            { get; init; }
     public Guid     ProjectId     { get; init; }
     public Guid?    RequestedBy   { get; init; }
+    public string   Action        { get; init; } = "run";   // 'run' | 'cancel'
     public int      Attempts      { get; init; }
     public DateTime NextAttemptAt { get; init; }
     public string   Status        { get; init; } = "pending";

@@ -11,6 +11,7 @@
 # `claude` run itself is dropped to the non-root `auditor` user.
 #
 # Environment provided by the worker:
+#   WS_ACTION           'run' (launch the orchestrator) or 'cancel' (stop a running one)
 #   WS_PROJECT_ID       project uuid
 #   WS_PROJECT_SLUG     project slug (local checkout dir name + tmux session suffix)
 #   WS_REPO_OWNER       GitHub owner of the project's primary repo
@@ -31,7 +32,19 @@ slug="${WS_PROJECT_SLUG:?missing WS_PROJECT_SLUG}"
 repo_dir="${REPOS_DIR}/${slug}"
 session="audit-${slug}"
 
-echo "[audit-dispatch] project=${slug} repo=${WS_REPO_OWNER:-?}/${WS_REPO_NAME:-?}"
+echo "[audit-dispatch] action=${WS_ACTION:-run} project=${slug} repo=${WS_REPO_OWNER:-?}/${WS_REPO_NAME:-?}"
+
+# Cancel: signal the running audit to stop. The orchestrator owns the cleanup via its own
+# /audit-cancel command (releasing claims, discarding worktrees) — no hard kill.
+if [[ "${WS_ACTION:-run}" == "cancel" ]]; then
+  if tmux has-session -t "${session}" 2>/dev/null; then
+    tmux send-keys -t "${session}" "/audit-cancel" Enter
+    echo "[audit-dispatch] sent /audit-cancel to session ${session}"
+  else
+    echo "[audit-dispatch] no running audit session ${session}; nothing to cancel"
+  fi
+  exit 0
+fi
 
 # A session for this project is already live — leave it; attach to watch it.
 if tmux has-session -t "${session}" 2>/dev/null; then

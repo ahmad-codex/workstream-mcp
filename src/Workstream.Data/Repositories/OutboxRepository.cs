@@ -169,14 +169,14 @@ public sealed class OutboxRepository : IOutboxRepository
 
     // ------- Audit dispatch outbox -------
 
-    public async Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, CancellationToken ct = default)
+    public async Task<long> EnqueueAuditDispatchAsync(Guid projectId, Guid? requestedBy, string action = "run", CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
-            INSERT INTO audit_dispatch_log (project_id, requested_by)
-            VALUES (@projectId, @requestedBy)
+            INSERT INTO audit_dispatch_log (project_id, requested_by, action)
+            VALUES (@projectId, @requestedBy, @action)
             RETURNING id
-            """, new { projectId, requestedBy }, cancellationToken: ct)).ConfigureAwait(false);
+            """, new { projectId, requestedBy, action }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<AuditDispatchRow>> ClaimAuditDispatchBatchAsync(int batchSize, CancellationToken ct = default)
@@ -197,6 +197,7 @@ public sealed class OutboxRepository : IOutboxRepository
             RETURNING a.id              AS Id,
                       a.project_id      AS ProjectId,
                       a.requested_by    AS RequestedBy,
+                      a.action          AS Action,
                       a.attempts        AS Attempts,
                       a.next_attempt_at AS NextAttemptAt,
                       a.status          AS Status
