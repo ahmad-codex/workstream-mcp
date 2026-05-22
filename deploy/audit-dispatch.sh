@@ -90,11 +90,16 @@ handled_bypass=0
 for _ in $(seq 1 40); do
   pane="$(tmux capture-pane -t "${session}" -p 2>/dev/null || true)"
   if [[ ${handled_trust} -eq 0 ]] && grep -q "trust this folder" <<<"${pane}"; then
+    # "1. Yes" is pre-selected — Enter confirms it.
     tmux send-keys -t "${session}" Enter
     handled_trust=1
     echo "[audit-dispatch] accepted the folder-trust prompt"
   elif [[ ${handled_bypass} -eq 0 ]] && grep -q "Bypass Permissions mode" <<<"${pane}"; then
-    tmux send-keys -t "${session}" 2 Enter
+    # "1. No, exit" is pre-selected — arrow Down to "2. Yes, I accept", then Enter.
+    # (Digit keys don't move the selection in this dialog.)
+    tmux send-keys -t "${session}" Down
+    sleep 1
+    tmux send-keys -t "${session}" Enter
     handled_bypass=1
     echo "[audit-dispatch] accepted the bypass-permissions warning"
   fi
