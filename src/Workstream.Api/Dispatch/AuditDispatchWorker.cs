@@ -27,14 +27,17 @@ public sealed class AuditDispatchWorker : BackgroundService
 
     private readonly IOutboxRepository _outbox;
     private readonly IProjectRepository _projects;
+    private readonly IUserRepository _users;
     private readonly IAuditRunner _runner;
     private readonly AuditDispatchOptions _opts;
     private readonly ILogger<AuditDispatchWorker> _log;
 
     public AuditDispatchWorker(IOutboxRepository outbox, IProjectRepository projects,
-        IAuditRunner runner, IOptions<AuditDispatchOptions> opts, ILogger<AuditDispatchWorker> log)
+        IUserRepository users, IAuditRunner runner, IOptions<AuditDispatchOptions> opts,
+        ILogger<AuditDispatchWorker> log)
     {
-        _outbox = outbox; _projects = projects; _runner = runner; _opts = opts.Value; _log = log;
+        _outbox = outbox; _projects = projects; _users = users;
+        _runner = runner; _opts = opts.Value; _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -78,12 +81,23 @@ public sealed class AuditDispatchWorker : BackgroundService
                 return;
             }
 
-            // Prefer a working (non reference-only) repo; fall back to the first registered.
+            // Prefer a working (non reference-only) repo as the primary; the rest are
+            // reference checkouts the orchestrator wants alongside.
             var repos = await _projects.ListReposAsync(row.ProjectId, ct).ConfigureAwait(false);
-            var repo = repos.FirstOrDefault(r => !r.IsReferenceOnly) ?? repos.FirstOrDefault();
+            var primary = repos.FirstOrDefault(r => !r.IsReferenceOnly) ?? repos.FirstOrDefault();
+            var referenceRepos = repos.Where(r => r.IsReferenceOnly)
+                .Select(r => new RepoRef(r.GithubOwner, r.GithubRepo))
+                .ToList();
+
+            // The audit runs on the triggering user's behalf — resolve their MCP token so
+            // the orchestrator's Workstream calls are attributed to them.
+            var mcpToken = row.RequestedBy is { } uid
+                ? await _users.GetMcpTokenAsync(uid, ct).ConfigureAwait(false)
+                : null;
 
             var result = await _runner.RunAsync(
-                new AuditRunContext(project.Id, project.Slug, repo?.GithubOwner, repo?.GithubRepo), ct)
+                new AuditRunContext(project.Id, project.Slug, primary?.GithubOwner, primary?.GithubRepo,
+                    mcpToken, referenceRepos), ct)
                 .ConfigureAwait(false);
 
             if (result.Ok)

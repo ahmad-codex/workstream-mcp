@@ -52,6 +52,14 @@ public sealed class UserRepository : IUserRepository
             .ConfigureAwait(false);
     }
 
+    public async Task<string?> GetMcpTokenAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await conn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+            "SELECT mcp_url_token FROM users WHERE id = @userId AND is_active = true",
+            new { userId }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
     public async Task<User?> GetByUsernameAsync(string username, CancellationToken ct = default)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);

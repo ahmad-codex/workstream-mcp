@@ -115,6 +115,8 @@ services:
     secrets:
       - pg_password
       - gh_clone_token
+      - ssh_mcp_key
+      - ssh_mcp_passphrase
     volumes:
       # Persistent repo checkouts — cloned once, fast-forwarded on later audits.
       - audit-repos:/srv/audit-repos
@@ -134,6 +136,8 @@ secrets:
   slack_demo:         { file: ./secrets/slack-demo }
   slack_signing_secret: { file: ./secrets/slack_signing_secret }
   gh_clone_token:       { file: ./secrets/gh_clone_token }
+  ssh_mcp_key:          { file: ./secrets/ssh_mcp_key }
+  ssh_mcp_passphrase:   { file: ./secrets/ssh_mcp_passphrase }
 
 volumes:
   workstream-pg-data:

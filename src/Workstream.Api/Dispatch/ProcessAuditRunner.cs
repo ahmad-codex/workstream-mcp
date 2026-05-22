@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,6 +43,11 @@ public sealed class ProcessAuditRunner : IAuditRunner
         psi.Environment["WS_PROJECT_SLUG"] = ctx.ProjectSlug;
         psi.Environment["WS_REPO_OWNER"]   = ctx.RepoOwner ?? "";
         psi.Environment["WS_REPO_NAME"]    = ctx.RepoName ?? "";
+        // The triggering user's MCP token — a credential; passed to the script only as an
+        // environment variable, never logged.
+        psi.Environment["WS_MCP_TOKEN"]    = ctx.WorkstreamMcpToken ?? "";
+        psi.Environment["WS_REFERENCE_REPOS"] =
+            string.Join(' ', ctx.ReferenceRepos.Select(r => $"{r.Owner}/{r.Name}"));
 
         using var proc = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
