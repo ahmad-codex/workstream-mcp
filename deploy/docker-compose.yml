@@ -114,6 +114,7 @@ services:
       WS_REPOS_DIR: /srv/audit-repos
     secrets:
       - pg_password
+      - gh_clone_token
     volumes:
       # Persistent repo checkouts — cloned once, fast-forwarded on later audits.
       - audit-repos:/srv/audit-repos
@@ -132,6 +133,7 @@ secrets:
   gh_webhook_secret:  { file: ./secrets/gh_webhook_secret }
   slack_demo:         { file: ./secrets/slack-demo }
   slack_signing_secret: { file: ./secrets/slack_signing_secret }
+  gh_clone_token:       { file: ./secrets/gh_clone_token }
 
 volumes:
   workstream-pg-data:

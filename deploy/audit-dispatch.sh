@@ -15,6 +15,8 @@
 #   WS_REPO_OWNER    GitHub owner of the project's primary repo
 #   WS_REPO_NAME     GitHub repo name
 #   WS_REPOS_DIR     base dir for checkouts (default /srv/audit-repos)
+#   WS_GIT_TOKEN_FILE  file holding a GitHub token for private clones
+#                      (default /run/secrets/gh_clone_token)
 #
 # A non-zero exit tells the worker the dispatch failed; it retries with backoff.
 
@@ -33,6 +35,15 @@ if tmux has-session -t "${session}" 2>/dev/null; then
   exit 0
 fi
 
+# Private repos: a GitHub token (Docker secret) is injected into git for clone/pull only,
+# via `-c url.insteadOf`, so it never lands in .git/config or the repos volume.
+GIT_TOKEN_FILE="${WS_GIT_TOKEN_FILE:-/run/secrets/gh_clone_token}"
+git_auth=()
+if [[ -s "${GIT_TOKEN_FILE}" ]]; then
+  _tok="$(tr -d '\r\n' < "${GIT_TOKEN_FILE}")"
+  git_auth=(-c "url.https://x-access-token:${_tok}@github.com/.insteadOf=https://github.com/")
+fi
+
 # Clone on first run, otherwise fast-forward to latest.
 if [[ ! -d "${repo_dir}/.git" ]]; then
   if [[ -z "${WS_REPO_OWNER:-}" || -z "${WS_REPO_NAME:-}" ]]; then
@@ -40,9 +51,10 @@ if [[ ! -d "${repo_dir}/.git" ]]; then
     exit 1
   fi
   echo "[audit-dispatch] cloning ${WS_REPO_OWNER}/${WS_REPO_NAME}"
-  git clone "https://github.com/${WS_REPO_OWNER}/${WS_REPO_NAME}.git" "${repo_dir}"
+  git "${git_auth[@]}" clone "https://github.com/${WS_REPO_OWNER}/${WS_REPO_NAME}.git" "${repo_dir}"
 fi
-git -C "${repo_dir}" pull --ff-only || echo "[audit-dispatch] pull skipped (non-ff or offline)"
+git "${git_auth[@]}" -C "${repo_dir}" pull --ff-only \
+  || echo "[audit-dispatch] pull skipped (non-ff or offline)"
 
 # Launch the project's audit orchestrator in a detached, attachable tmux session.
 # The orchestrator (the project's own /audit-run command) talks back to Workstream to
