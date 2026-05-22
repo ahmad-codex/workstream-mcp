@@ -35,21 +35,44 @@ session="audit-${slug}"
 echo "[audit-dispatch] action=${WS_ACTION:-run} project=${slug} repo=${WS_REPO_OWNER:-?}/${WS_REPO_NAME:-?}"
 
 # Cancel: signal the running audit to stop. The orchestrator owns the cleanup via its own
-# /audit-cancel command (releasing claims, discarding worktrees) — no hard kill.
-# Esc first: it interrupts whatever the orchestrator is mid-doing, so /audit-cancel runs
-# immediately instead of queueing behind an in-flight subagent. Two Esc presses ensure
-# the main loop (not just a nested view) is back at the prompt.
+# /audit-cancel command (releasing claims, archiving the plan, discarding worktrees).
+# Sequence: interrupt (Esc, twice) so /audit-cancel runs immediately instead of queueing
+# behind an in-flight subagent; wait for the orchestrator to settle; then /clear the
+# conversation and kill the tmux session so nothing lingers.
 if [[ "${WS_ACTION:-run}" == "cancel" ]]; then
-  if tmux has-session -t "${session}" 2>/dev/null; then
-    tmux send-keys -t "${session}" Escape
-    sleep 3
-    tmux send-keys -t "${session}" Escape
-    sleep 4
-    tmux send-keys -t "${session}" "/audit-cancel" Enter
-    echo "[audit-dispatch] interrupted session ${session} and sent /audit-cancel"
-  else
+  if ! tmux has-session -t "${session}" 2>/dev/null; then
     echo "[audit-dispatch] no running audit session ${session}; nothing to cancel"
+    exit 0
   fi
+
+  tmux send-keys -t "${session}" Escape
+  sleep 3
+  tmux send-keys -t "${session}" Escape
+  sleep 4
+  tmux send-keys -t "${session}" "/audit-cancel" Enter
+  echo "[audit-dispatch] interrupted session ${session} and sent /audit-cancel"
+
+  # Wait for the orchestrator to finish its cleanup before tearing down. Claude's busy
+  # indicator "esc to interrupt" disappears from the status line when it is idle; we treat
+  # two consecutive idle samples (10s) as "settled". Cap at 5 minutes so a never-ending
+  # cleanup doesn't block the dispatch worker.
+  idle_streak=0
+  for _ in $(seq 1 60); do
+    pane="$(tmux capture-pane -t "${session}" -p 2>/dev/null || true)"
+    if grep -q "esc to interrupt" <<<"${pane}"; then
+      idle_streak=0
+    else
+      idle_streak=$((idle_streak + 1))
+      [[ ${idle_streak} -ge 2 ]] && break
+    fi
+    sleep 5
+  done
+
+  # Clear the conversation, then close the session.
+  tmux send-keys -t "${session}" "/clear" Enter
+  sleep 3
+  tmux kill-session -t "${session}" 2>/dev/null || true
+  echo "[audit-dispatch] cleared and closed session ${session}"
   exit 0
 fi
 
