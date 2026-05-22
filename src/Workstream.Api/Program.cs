@@ -23,6 +23,13 @@ AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// A "dispatcher" replica runs only the audit-dispatch worker — no HTTP surface, no MCP
+// tools, no migrations, no Slack/GitHub workers. The default "api" role runs the full
+// server. The dispatcher is its own container (Dockerfile.dispatcher) because it needs
+// git, tmux and Claude Code, which the lean api image deliberately omits.
+var role = builder.Configuration["WORKSTREAM_ROLE"] ?? "api";
+var isDispatcher = string.Equals(role, "dispatcher", StringComparison.OrdinalIgnoreCase);
+
 // ----- Configuration -----
 var dbConn         = BuildDbConnectionString(builder.Configuration);
 var adminToken     = ResolveSecret(builder.Configuration, "WORKSTREAM_ADMIN_TOKEN",   "WORKSTREAM_ADMIN_TOKEN_FILE");
@@ -52,29 +59,31 @@ builder.Services.AddSingleton<StateMachineService>();
 builder.Services.AddSingleton<IBoardSyncEnqueue, OutboxBoardSyncEnqueue>();
 builder.Services.AddSingleton<ISlackNotifyEnqueue, OutboxSlackNotifyEnqueue>();
 
-// ----- GitHub Projects V2 -----
-builder.Services.Configure<GitHubAppOptions>(o =>
+// ----- GitHub Projects V2 + Slack (api role only) -----
+if (!isDispatcher)
 {
-    if (int.TryParse(builder.Configuration["WORKSTREAM_GH_APP_ID"], out var appId)) o.AppId = appId;
-    o.PrivateKeyPath = builder.Configuration["WORKSTREAM_GH_APP_KEY_PATH"] ?? "";
-    if (long.TryParse(builder.Configuration["WORKSTREAM_GH_INSTALLATION_ID"], out var inst)) o.InstallationId = inst;
-    o.WebhookSecret = ResolveSecret(builder.Configuration, "WORKSTREAM_GH_WEBHOOK_SECRET", "WORKSTREAM_GH_WEBHOOK_SECRET_FILE");
-});
-builder.Services.AddSingleton<GitHubAppAuthService>();
-builder.Services.AddHttpClient<ProjectsV2Client>();
-builder.Services.AddHostedService<BoardSyncWorker>();
+    builder.Services.Configure<GitHubAppOptions>(o =>
+    {
+        if (int.TryParse(builder.Configuration["WORKSTREAM_GH_APP_ID"], out var appId)) o.AppId = appId;
+        o.PrivateKeyPath = builder.Configuration["WORKSTREAM_GH_APP_KEY_PATH"] ?? "";
+        if (long.TryParse(builder.Configuration["WORKSTREAM_GH_INSTALLATION_ID"], out var inst)) o.InstallationId = inst;
+        o.WebhookSecret = ResolveSecret(builder.Configuration, "WORKSTREAM_GH_WEBHOOK_SECRET", "WORKSTREAM_GH_WEBHOOK_SECRET_FILE");
+    });
+    builder.Services.AddSingleton<GitHubAppAuthService>();
+    builder.Services.AddHttpClient<ProjectsV2Client>();
+    builder.Services.AddHostedService<BoardSyncWorker>();
 
-// ----- Slack -----
-builder.Services.AddSingleton<ISlackBotTokenResolver, FileSlackBotTokenResolver>();
-builder.Services.AddHttpClient<SlackClient>();
-builder.Services.AddHostedService<SlackNotifyWorker>();
-builder.Services.Configure<SlackAppOptions>(o =>
-{
-    o.SigningSecret = ResolveSecret(builder.Configuration,
-        "WORKSTREAM_SLACK_SIGNING_SECRET", "WORKSTREAM_SLACK_SIGNING_SECRET_FILE");
-});
+    builder.Services.AddSingleton<ISlackBotTokenResolver, FileSlackBotTokenResolver>();
+    builder.Services.AddHttpClient<SlackClient>();
+    builder.Services.AddHostedService<SlackNotifyWorker>();
+    builder.Services.Configure<SlackAppOptions>(o =>
+    {
+        o.SigningSecret = ResolveSecret(builder.Configuration,
+            "WORKSTREAM_SLACK_SIGNING_SECRET", "WORKSTREAM_SLACK_SIGNING_SECRET_FILE");
+    });
+}
 
-// ----- Audit dispatch -----
+// ----- Audit dispatch (both roles register it; only the dispatcher enables it) -----
 builder.Services.Configure<AuditDispatchOptions>(o =>
 {
     o.Enabled    = string.Equals(builder.Configuration["WORKSTREAM_AUDIT_DISPATCH_ENABLED"],
@@ -85,8 +94,9 @@ builder.Services.Configure<AuditDispatchOptions>(o =>
 builder.Services.AddSingleton<IAuditRunner, ProcessAuditRunner>();
 builder.Services.AddHostedService<AuditDispatchWorker>();
 
-// ----- MCP tools -----
-builder.Services.AddWorkstreamMcpTools();
+// ----- MCP tools (api role only) -----
+if (!isDispatcher)
+    builder.Services.AddWorkstreamMcpTools();
 
 // ----- Logging -----
 builder.Logging.ClearProviders();
@@ -94,13 +104,22 @@ builder.Logging.AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat =
 
 var app = builder.Build();
 
-// ----- Migrations on startup -----
+// ----- Migrations on startup (api role owns the schema) -----
+if (!isDispatcher)
 {
     using var scope = app.Services.CreateScope();
     var factory = scope.ServiceProvider.GetRequiredService<IDbConnectionFactory>();
     var migrationsDir = ResolveMigrationsDir();
     var runner = new SqlMigrationRunner(factory, migrationsDir);
     await runner.ApplyAsync().ConfigureAwait(false);
+}
+
+if (isDispatcher)
+{
+    // The dispatcher has no HTTP surface — it just hosts the AuditDispatchWorker.
+    // RunAsync keeps the process (and that background service) alive.
+    await app.RunAsync().ConfigureAwait(false);
+    return;
 }
 
 // ----- Middleware pipeline -----

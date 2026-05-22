@@ -76,7 +76,7 @@ public sealed class ProcessAuditRunner : IAuditRunner
 
         var tail = Tail(stderr.Length > 0 ? stderr.ToString() : stdout.ToString(), 500);
         return proc.ExitCode == 0
-            ? new AuditRunResult(true, $"dispatched {ctx.ProjectSlug}", null)
+            ? new AuditRunResult(true, $"audit session launched for {ctx.ProjectSlug}", null)
             : new AuditRunResult(false, null, $"dispatch script exited {proc.ExitCode}: {tail}");
     }
 

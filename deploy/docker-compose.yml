@@ -92,6 +92,34 @@ services:
     ports:
       - "127.0.0.1:8080:8080"   # localhost-only by default; deploy/docker-compose.prod.yml adds the public binding
 
+  # Audit dispatcher. Runs the same app as `api` with WORKSTREAM_ROLE=dispatcher, so only
+  # the AuditDispatchWorker is active. This image additionally carries git, tmux and the
+  # Claude Code CLI. It drains audit_dispatch_log and, per queued project, launches the
+  # project's audit orchestrator in a detached tmux session you can attach to:
+  #   docker compose -f deploy/docker-compose.yml exec dispatcher tmux attach -t audit-<slug>
+  dispatcher:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.dispatcher
+    restart: unless-stopped
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    environment:
+      WORKSTREAM_ROLE: dispatcher
+      WORKSTREAM_DB_CONNECTION: "Host=pgbouncer;Port=6432;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=5;Pooling=true;No Reset On Close=true;Max Auto Prepare=0;Server Compatibility Mode=NoTypeLoading"
+      WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
+      WORKSTREAM_AUDIT_DISPATCH_ENABLED: "true"
+      WORKSTREAM_AUDIT_DISPATCH_SCRIPT: /app/audit-dispatch.sh
+      WS_REPOS_DIR: /srv/audit-repos
+      # Claude Code auth for the audit runs the dispatch script launches.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    secrets:
+      - pg_password
+    volumes:
+      # Persistent repo checkouts — cloned once, fast-forwarded on later audits.
+      - audit-repos:/srv/audit-repos
+
 secrets:
   # The `mode` for these mounts is set per-service in the long-form secrets
   # references above (the top-level secret definition's `mode` is Swarm-only
@@ -105,3 +133,4 @@ secrets:
 
 volumes:
   workstream-pg-data:
+  audit-repos:
