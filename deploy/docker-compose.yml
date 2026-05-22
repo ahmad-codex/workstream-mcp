@@ -118,10 +118,10 @@ services:
     volumes:
       # Persistent repo checkouts — cloned once, fast-forwarded on later audits.
       - audit-repos:/srv/audit-repos
-      # Claude Code auth + config. Persisted so the one-time interactive login
-      #   docker compose exec -it dispatcher claude   (then /login)
-      # survives container restarts and rebuilds — no API key needed.
-      - claude-config:/root/.claude
+      # Claude Code auth + config for the non-root `auditor` user. Persisted so the
+      # one-time interactive login survives restarts/rebuilds — no API key needed:
+      #   docker compose exec -u auditor -it dispatcher claude   (then /login)
+      - claude-config:/home/auditor/.claude
 
 secrets:
   # The `mode` for these mounts is set per-service in the long-form secrets

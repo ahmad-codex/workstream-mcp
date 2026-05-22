@@ -39,6 +39,15 @@ RUN apt-get update \
  && npm install -g @anthropic-ai/claude-code \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Non-root user for the audit runs: Claude Code refuses --dangerously-skip-permissions
+# under root. The .NET worker still runs as root (it must read root:root Docker secrets);
+# the dispatch script drops to this user, via runuser, only for the `claude` process.
+# safe.directory='*' lets root run git inside the auditor-owned repo checkouts.
+RUN useradd --create-home --uid 1000 auditor \
+ && mkdir -p /home/auditor/.claude \
+ && chown -R auditor:auditor /home/auditor \
+ && git config --system --add safe.directory '*'
+
 COPY --from=build /publish/ ./
 COPY deploy/audit-dispatch.sh /app/audit-dispatch.sh
 RUN chmod +x /app/audit-dispatch.sh
