@@ -114,6 +114,13 @@ curl http://localhost:8080/healthz
 # {"ok":true}
 ```
 
+To skip the local build, run the published image instead:
+
+```bash
+WORKSTREAM_IMAGE=ghcr.io/ahmad-codex/workstream-mcp:latest \
+  docker compose -f deploy/docker-compose.quickstart.yml up -d --no-build
+```
+
 The API applies the SQL migrations on startup, including the `audit` and `development` plan types.
 
 Create a user. The response contains the user's MCP URL once; copy it.
@@ -297,9 +304,24 @@ Early, version 0.1.0. Known gaps:
 
 See [CHANGELOG.md](./CHANGELOG.md) and the roadmap in [docs/ROADMAP.md](./docs/ROADMAP.md).
 
+## Community
+
+- Questions and ideas: [GitHub Discussions](https://github.com/ahmad-codex/workstream-mcp/discussions)
+- Bugs and feature requests: [issues](https://github.com/ahmad-codex/workstream-mcp/issues/new/choose)
+- Getting help: [SUPPORT.md](./SUPPORT.md). How decisions are made: [GOVERNANCE.md](./GOVERNANCE.md)
+- Security issues: [SECURITY.md](./SECURITY.md)
+
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Security issues: [SECURITY.md](./SECURITY.md).
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md) and the good first issues in
+[docs/ROADMAP.md](./docs/ROADMAP.md). The repository opens in a dev container or GitHub
+Codespaces with the .NET 10 SDK and Postgres ready.
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ahmad-codex/workstream-mcp)
+
+### Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=ahmad-codex/workstream-mcp)](https://github.com/ahmad-codex/workstream-mcp/graphs/contributors)
 
 ## License
 

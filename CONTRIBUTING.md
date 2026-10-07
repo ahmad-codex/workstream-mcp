@@ -19,6 +19,10 @@ larger planned work.
 - .NET SDK 10 (the exact feature band is pinned in [`global.json`](./global.json))
 - Docker, for the integration and concurrency tests (Testcontainers starts Postgres 16)
 
+Or open the repository in the dev container (`.devcontainer/`, also used by GitHub
+Codespaces). It has the .NET 10 SDK, a Postgres 16 service with `WORKSTREAM_DB_CONNECTION`
+already set, and Docker-in-Docker for the Testcontainers tests. `make run` starts the API there.
+
 ## Build and test
 
 ```bash
@@ -36,9 +40,13 @@ dotnet test tests/Workstream.ConcurrencyTests
 dotnet test tests/Workstream.UnitTests --filter "FullyQualifiedName~StateMachineServiceTests"
 ```
 
+The `Makefile` wraps the same commands: `make build`, `make test-unit`, `make test`,
+`make format`, `make format-check`, `make run`, `make up` / `make down` (quick-start stack).
+
 The build treats warnings as errors (`Directory.Build.props`) and enforces the code-style rules
 in [`.editorconfig`](./.editorconfig) at build time (`EnforceCodeStyleInBuild`). A change that
-adds a warning will fail CI. Configure your editor to honor `.editorconfig`.
+adds a warning will fail CI, and so will code that `dotnet format style` would change
+(`make format` fixes it). Configure your editor to honor `.editorconfig`.
 
 The concurrency tests in `tests/Workstream.ConcurrencyTests` are the correctness gate for the
 claim primitive. If they fail or flake, the change does not merge.
@@ -73,8 +81,14 @@ These come from the spec and are checked in review.
 - Branch from `master`. Keep pull requests focused on one change.
 - Commit messages: a short sentence in the imperative mood, capitalized, no trailing period,
   for example `Add cancel_audit tool` or `Fix claim TTL parsing for hour units`.
+- Pull request titles follow the same style; they become the release-note lines. Branch names
+  starting with `fix/`, `feat/` or `docs/` get the matching label automatically.
 - Fill in the pull request template. Say how you tested the change.
-- CI must pass: build, unit, integration and concurrency tests.
+- CI must pass: build, code style, unit, integration and concurrency tests.
+- Labels drive the release notes: `bug`, `enhancement`, `documentation`, `breaking-change`,
+  `security`, `skip-changelog`. Area labels (`area: slack`, ...) are added from the changed paths.
+- Signing off commits (`git commit -s`, Developer Certificate of Origin) is welcome but not
+  required. There is no CLA.
 - Update docs in `docs/` when behavior or configuration changes, and add a line under
   `Unreleased` in [`CHANGELOG.md`](./CHANGELOG.md).
 

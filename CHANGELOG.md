@@ -8,6 +8,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Docker image published to `ghcr.io/ahmad-codex/workstream-mcp` on version tags; the quick-start compose file can use it.
+- Dev container / Codespaces setup with .NET 10 and Postgres 16, and a `Makefile`.
+- CODEOWNERS, question issue form, Discussions templates, path labeler, first-interaction greeting, stale policy and release-drafter.
+- SUPPORT.md and GOVERNANCE.md.
+- CI checks code style with `dotnet format style`.
 - Generic example audit orchestrator in `orchestrators/example/`.
 - `workstream-admin user create --admin`.
 - Unit tests for token redaction in traces and for the admin CLI request bodies.
