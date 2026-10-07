@@ -9,6 +9,21 @@ An MCP server that keeps the state of record for work done by AI agents and huma
 plans, tasks, claims, findings, fix attempts and verdicts, stored in Postgres, mirrored to
 GitHub Projects and Slack.
 
+## Set it up with Claude Code
+
+Clone the repo, open Claude Code in it, and paste:
+
+```text
+Set up workstream-mcp for me on this machine. Follow the README quick start using the
+published Docker image, create an admin user for me, and connect this Claude Code session
+to it. Then create a project and a development plan with three sample tasks, activate it,
+and claim one task to show it works. When that is done, ask me whether I want GitHub
+Projects or Slack sync, and walk me through docs/github-setup.md or docs/slack-setup.md
+step by step, telling me exactly what to click and which values to paste back.
+```
+
+Prefer to do it by hand? See the [quick start](#quick-start-about-5-minutes).
+
 ## Why
 
 A common way to coordinate agent work is a markdown plan in the repo: a checklist the agent
