@@ -1,0 +1,16 @@
+name: Question
+description: Ask how something works. For open-ended discussion, prefer GitHub Discussions.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what have you tried? Remove URL tokens and secrets.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: e.g. 0.1.0
