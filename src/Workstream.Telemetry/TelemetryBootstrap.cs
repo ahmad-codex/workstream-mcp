@@ -7,8 +7,8 @@ namespace Workstream.Telemetry;
 
 /// <summary>
 /// Wires OTel resource, propagators, and exporters (§11.2). The exporter target is
-/// configurable via <c>WORKSTREAM_OTEL_ENDPOINT</c>; absent that, OTel is wired with a
-/// no-op exporter so dev runs stay quiet.
+/// configurable via <c>WORKSTREAM_OTEL_ENDPOINT</c>; the API host only calls this when that
+/// variable is set. The URL token in the request path is redacted from server spans.
 /// </summary>
 public static class TelemetryBootstrap
 {
@@ -35,12 +35,31 @@ public static class TelemetryBootstrap
             {
                 b.SetResourceBuilder(resource);
                 b.AddSource("Npgsql");
-                b.AddAspNetCoreInstrumentation();
+                b.AddAspNetCoreInstrumentation(o => o.EnrichWithHttpRequest = (activity, request) =>
+                    activity.SetTag("url.path", RedactTokenPath(request.Path.Value)));
                 b.AddHttpClientInstrumentation();
                 if (!string.IsNullOrEmpty(otelEndpoint))
                     b.AddOtlpExporter(o => o.Endpoint = new System.Uri(otelEndpoint));
             });
 
         return services;
+    }
+
+    private static readonly HashSet<string> KnownFirstSegments =
+        new(StringComparer.OrdinalIgnoreCase) { "admin", "webhooks", "healthz", "mcp" };
+
+    /// <summary>
+    /// Replaces the URL token (the first path segment of <c>/{token}/...</c>) with
+    /// <c>&lt;token&gt;</c> so it never reaches a trace exporter. Paths that start with a
+    /// known route segment are returned unchanged.
+    /// </summary>
+    public static string RedactTokenPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || path == "/") return path ?? "";
+        var trimmed = path.TrimStart('/');
+        var slash = trimmed.IndexOf('/');
+        var first = slash < 0 ? trimmed : trimmed[..slash];
+        if (KnownFirstSegments.Contains(first)) return path;
+        return slash < 0 ? "/<token>" : "/<token>" + trimmed[slash..];
     }
 }
