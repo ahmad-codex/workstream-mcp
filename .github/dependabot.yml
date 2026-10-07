@@ -10,6 +10,10 @@ updates:
         patterns: ["OpenTelemetry*"]
       testing:
         patterns: ["xunit*", "Testcontainers*", "Microsoft.NET.Test.Sdk", "coverlet*"]
+    ignore:
+      # 8.x moved to a commercial license.
+      - dependency-name: "FluentAssertions"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
