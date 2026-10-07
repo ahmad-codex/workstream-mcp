@@ -45,7 +45,7 @@ public sealed class StuckWorkJob : BackgroundService
         }
     }
 
-    private async Task RunOnceAsync(CancellationToken ct)
+    internal async Task RunOnceAsync(CancellationToken ct)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         // Inline a single query that bundles the four categories from §11.3.

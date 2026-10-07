@@ -8,6 +8,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Integration coverage for the hourly stuck-work report, including expired task claims and stale findings.
 - Docker image published to `ghcr.io/ahmad-codex/workstream-mcp` on version tags; the quick-start compose file can use it.
 - Dev container / Codespaces setup with .NET 10 and Postgres 16, and a `Makefile`.
 - CODEOWNERS, question issue form, Discussions templates, path labeler, first-interaction greeting, stale policy and release-drafter.
