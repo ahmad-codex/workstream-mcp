@@ -17,9 +17,9 @@
     <!-- Data -->
     <PackageVersion Include="Npgsql" Version="9.0.2" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
-    <PackageVersion Include="FluentMigrator" Version="6.2.0" />
+    <PackageVersion Include="FluentMigrator" Version="8.0.1" />
     <PackageVersion Include="FluentMigrator.Runner" Version="6.2.0" />
-    <PackageVersion Include="FluentMigrator.Runner.Postgres" Version="6.2.0" />
+    <PackageVersion Include="FluentMigrator.Runner.Postgres" Version="8.0.1" />
 
     <!-- GitHub -->
     <PackageVersion Include="Octokit" Version="13.0.1" />
