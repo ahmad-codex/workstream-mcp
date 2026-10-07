@@ -118,7 +118,7 @@ public sealed class TaskLifecycleTests : IClassFixture<PostgresFixture>
         // Insert one finding so we have something to override.
         var inserted = await findings.InsertManyAsync(taskId, new[]
         {
-            new FindingInput("F-X-1", "high", "compression-preserved", "sym", "rc", "repro", "adv", "exp", "act", "chroma"),
+            new FindingInput("F-X-1", "high", "invariant-preserved", "sym", "rc", "repro", "adv", "exp", "act", "reference"),
         }).ConfigureAwait(false);
         var findingId = inserted[0].Id;
 

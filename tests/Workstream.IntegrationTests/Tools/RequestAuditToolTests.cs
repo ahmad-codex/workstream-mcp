@@ -83,7 +83,8 @@ public sealed class RequestAuditToolTests : IClassFixture<PostgresFixture>
         // Nothing was enqueued when the gate rejected the call.
         await using var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false);
         var count = await conn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit_dispatch_log").ConfigureAwait(false);
+            "SELECT COUNT(*) FROM audit_dispatch_log l JOIN projects p ON p.id = l.project_id WHERE p.slug = @slug",
+            new { slug }).ConfigureAwait(false);
         count.Should().Be(0);
     }
 

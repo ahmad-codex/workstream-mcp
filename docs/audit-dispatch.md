@@ -7,18 +7,18 @@ the work.
 ## The shape
 
 ```
-request_audit(["crbrl-ai", …])      ← one MCP call
+request_audit(["example-app", …])      ← one MCP call
         │
    audit_dispatch_log outbox         ← request_audit only commits a Postgres row
         │
 ┌──────────────────────────────────┐
-│ dispatcher container (Hetzner)   │  same image as `api`, WORKSTREAM_ROLE=dispatcher
+│ dispatcher container             │  same image as `api`, WORKSTREAM_ROLE=dispatcher
 │   AuditDispatchWorker            │  → registers only the audit-dispatch worker
 │   git · tmux · Claude Code       │
 │                                  │
 │  per queued project:             │
 │   git clone/pull the repo        │
-│   register workstream + hetzner  │
+│   register workstream + ssh-host │
 │     MCP servers for the run      │
 │   tmux new-session  claude       │  detached, named  audit-<slug>
 │     "/audit-run"                 │
@@ -80,9 +80,10 @@ Set on the `dispatcher` service (see `deploy/docker-compose.yml`):
 | `WORKSTREAM_AUDIT_DISPATCH_ENABLED`  | `true` to poll the outbox (the `api` role leaves it off) |
 | `WORKSTREAM_AUDIT_DISPATCH_SCRIPT`   | Path to the dispatch script (baked in at `/app/audit-dispatch.sh`) |
 | `WS_REPOS_DIR`                       | Base dir for repo checkouts (a persistent volume) |
+| `WS_SSH_MCP_HOST` / `WS_SSH_MCP_USER` | Optional test host for the `ssh-host` MCP given to audit runs; unset to skip it |
 
 Secrets the dispatcher needs: `pg_password`, `gh_clone_token` (private clones),
-`ssh_mcp_key` + `ssh_mcp_passphrase` (the `hetzner-moelabs` MCP). See
+`ssh_mcp_key` + `ssh_mcp_passphrase` (the optional `ssh-host` MCP, enabled by `WS_SSH_MCP_HOST`). See
 [deployment.md](./deployment.md#secrets).
 
 ## One-time Claude Code login

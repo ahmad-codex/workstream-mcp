@@ -32,7 +32,7 @@ public sealed class GetFindingToolTests : IClassFixture<PostgresFixture>
         {
             new FindingInput("F-GF-1", "high", "compression-preserved",
                 "the symptom", "the root cause", "1. repro step",
-                "adversarial input", "expected X", "actual Y", "chroma does Z"),
+                "adversarial input", "expected X", "actual Y", "reference does Z"),
         }).ConfigureAwait(false);
         var findingId = inserted[0].Id;
 
@@ -53,7 +53,7 @@ public sealed class GetFindingToolTests : IClassFixture<PostgresFixture>
         body.AdversarialInput.Should().Be("adversarial input");
         body.Expected.Should().Be("expected X");
         body.Actual.Should().Be("actual Y");
-        body.ReferenceComparison.Should().Be("chroma does Z");
+        body.ReferenceComparison.Should().Be("reference does Z");
         body.Status.Should().Be("pending_verification");
     }
 

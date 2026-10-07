@@ -8,7 +8,7 @@ The headline workflow (§14): the user adds one URL to Claude's config and is do
 workstream-admin user create --github-username new-dev --display "New Developer" --type human
 # Output:
 #   User created.
-#   URL: https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+#   URL: https://mcp.example.com/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 #   Copy this URL exactly. It will not be shown again.
 ```
 
@@ -26,7 +26,7 @@ Add to `~/.claude/mcp.json` (or via the Claude UI):
 {
   "mcpServers": {
     "workstream": {
-      "url": "https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
+      "url": "https://mcp.example.com/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
       "transport": "http"
     }
   }
@@ -36,7 +36,7 @@ Add to `~/.claude/mcp.json` (or via the Claude UI):
 Verify the URL before adding it:
 
 ```bash
-./scripts/verify-mcp.sh https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+./scripts/verify-mcp.sh https://mcp.example.com/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 # OK. Server identifies you as:
 # { "ok": true, "actor": { "github_username": "new-dev", "is_admin": false }, ... }
 ```
@@ -45,11 +45,11 @@ That's it. No PAT. No OAuth flow. No token prompts inside Claude.
 
 ## Daily flow
 
-Developer to Claude: "What can I pick up on the MemTurbo dev plan?"
+Developer to Claude: "What can I pick up on the example-app dev plan?"
 
 Behind the scenes Claude calls:
 
-1. `list_plans({ project_id: <memturbo> })` → sees the dev plan id.
+1. `list_plans({ project_id: <example-app> })` → sees the dev plan id.
 2. `get_plan_dashboard(<plan_id>)` → next 5 claimable tasks + their priorities.
 3. The developer chooses one; Claude calls `claim_specific_task(<task_id>, "developer")`.
 4. `start_work(<claim_token>)` → board card moves to "In Progress", Slack posts "🔧 In progress: …".

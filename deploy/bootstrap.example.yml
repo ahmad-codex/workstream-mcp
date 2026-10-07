@@ -8,19 +8,19 @@ plan_types:
   development: { file: profiles/development.json }
 
 users:
-  - github_username: moe
-    display_name: Mohamed
+  - github_username: alice
+    display_name: Alice
     type: human
     permissions: [can_override_verdict, can_archive_plan, can_mark_needs_human_review]
-  - github_username: swan-orchestrator
+  - github_username: example-orchestrator
     type: orchestrator
 
 projects:
-  - slug: memturbo
-    display_name: MemTurboDB
+  - slug: example-app
+    display_name: Example App
     repos:
-      - { owner: precoglabs,  repo: memturbodb }
-      - { owner: chroma-core, repo: chroma, reference_only: true }
+      - { owner: example-org, repo: example-app }
+      - { owner: example-org, repo: example-reference, reference_only: true }
     boards:
       - project_v2_node_id: PVT_xxx
         column_mapping:
@@ -32,4 +32,4 @@ projects:
     slack:
       workspace_id:        TXXXX
       channel_id:          CXXXX
-      bot_token_secret_ref: file:///run/secrets/slack-memturbo
+      bot_token_secret_ref: file:///run/secrets/slack-example-app

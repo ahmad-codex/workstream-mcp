@@ -54,7 +54,7 @@ public sealed class AddProjectRepoTool : McpTool<AddProjectRepoInput, AddProject
     private readonly IProjectRepository _repo;
     public AddProjectRepoTool(IProjectRepository repo) => _repo = repo;
     public override string Name => "add_project_repo";
-    public override string Description => "Admin: attach a GitHub repo to a project. Reference-only repos are not modified by the system (e.g. Chroma to MemTurbo).";
+    public override string Description => "Admin: attach a GitHub repo to a project. Reference-only repos are not modified by the system (e.g. an upstream project used as a design reference).";
 
     protected override async Task<AddProjectRepoOutput> RunAsync(AddProjectRepoInput input, RequestContext ctx, CancellationToken ct)
     {

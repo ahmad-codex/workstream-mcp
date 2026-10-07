@@ -33,7 +33,7 @@ dotnet test tests/Workstream.ConcurrencyTests
 dotnet test tests/Workstream.UnitTests --filter "FullyQualifiedName~StateMachineServiceTests.RejectsIllegalAuditTransition"
 
 # Admin CLI
-dotnet run --project tools/workstream-admin -- user create --github-username moe --type human
+dotnet run --project tools/workstream-admin -- user create --github-username alice --type human
 
 # Container stack
 docker compose -f deploy/docker-compose.yml up

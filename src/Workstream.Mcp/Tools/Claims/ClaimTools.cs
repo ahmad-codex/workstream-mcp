@@ -296,7 +296,7 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
     public override string Name => "refresh_claim";
     public override string Description =>
         "Extend an active claim's TTL without releasing it. Use when a subagent's reproduction is " +
-        "taking longer than the configured role TTL (e.g. a Hetzner-routed verifier mid-deploy). " +
+        "taking longer than the configured role TTL (e.g. a verifier mid-deploy on a remote test host). " +
         "extend_by accepts the same duration shorthand as the role_ttls config ('30m', '2h'); if " +
         "omitted, the role's configured TTL is added on top of the current claimed_until. The token " +
         "must still be live AND held by the calling actor — an already-expired claim cannot be " +

@@ -9,10 +9,12 @@ using Workstream.Core.StateMachine;
 using Workstream.Data;
 using Workstream.Data.Migrations;
 using Workstream.Data.Repositories;
+using Workstream.Data.StuckWork;
 using Workstream.GitHub;
 using Workstream.Mcp;
 using Workstream.Mcp.Notifications;
 using Workstream.Slack;
+using Workstream.Telemetry;
 using Workstream.Api.Webhooks;
 
 // Npgsql 6+ defaults timestamptz → DateTime; the domain records use DateTimeOffset.
@@ -94,9 +96,17 @@ builder.Services.Configure<AuditDispatchOptions>(o =>
 builder.Services.AddSingleton<IAuditRunner, ProcessAuditRunner>();
 builder.Services.AddHostedService<AuditDispatchWorker>();
 
-// ----- MCP tools (api role only) -----
+// ----- MCP tools and the hourly stuck-work report (api role only) -----
 if (!isDispatcher)
+{
     builder.Services.AddWorkstreamMcpTools();
+    builder.Services.AddHostedService<StuckWorkJob>();
+}
+
+// ----- Telemetry: only when an OTLP endpoint is configured -----
+var otelEndpoint = builder.Configuration["WORKSTREAM_OTEL_ENDPOINT"];
+if (!string.IsNullOrWhiteSpace(otelEndpoint))
+    builder.Services.AddWorkstreamTelemetry(otelEndpoint);
 
 // ----- Logging -----
 builder.Logging.ClearProviders();

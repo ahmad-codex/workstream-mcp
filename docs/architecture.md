@@ -4,7 +4,7 @@
 
 ## The system in one paragraph
 
-A .NET 10 ASP.NET Core service backed by Postgres 16 exposes an MCP server over HTTP. Each MCP-using client (a Claude developer session, an orchestrator agent) authenticates by including a 256-bit URL token in the path: `https://mcp.wrkstream.xyz/<token>/mcp`. Tools manipulate a structured store of projects, plans, tasks, findings, attempts, and verdicts. Concurrent claimers use Postgres's `FOR UPDATE SKIP LOCKED` so they never block each other. Every state change writes an `events` row. Board updates (GitHub Projects V2) and Slack notifications go through outbox tables drained by background workers, so external-API hiccups never block MCP calls.
+A .NET 10 ASP.NET Core service backed by Postgres 16 exposes an MCP server over HTTP. Each MCP-using client (a Claude developer session, an orchestrator agent) authenticates by including a 256-bit URL token in the path: `https://mcp.example.com/<token>/mcp`. Tools manipulate a structured store of projects, plans, tasks, findings, attempts, and verdicts. Concurrent claimers use Postgres's `FOR UPDATE SKIP LOCKED` so they never block each other. Every state change writes an `events` row. Board updates (GitHub Projects V2) and Slack notifications go through outbox tables drained by background workers, so external-API hiccups never block MCP calls.
 
 ## Module map
 
@@ -38,8 +38,8 @@ tools/workstream-admin  Operator CLI: user/project/plan management, bootstrap ap
 
 ## Request lifecycle (one tool call)
 
-1. Caddy terminates TLS, forwards `https://mcp.wrkstream.xyz/<token>/mcp` to the API container with the path intact (and path-logging redacted in Caddy access logs).
-2. `RequestLoggingMiddleware` records the request with the token segment rewritten to `<actor:moe>`.
+1. Caddy terminates TLS, forwards `https://mcp.example.com/<token>/mcp` to the API container with the path intact (and path-logging redacted in Caddy access logs).
+2. `RequestLoggingMiddleware` records the request with the token segment rewritten to `<actor:alice>`.
 3. `TokenResolutionMiddleware` peels the first path segment, looks the token up in `users`, attaches a `RequestContext` to `HttpContext.Items`, and rewrites the path to drop the token.
 4. `RateLimitMiddleware` checks the per-actor sliding-window budget (60/min, 600/hr).
 5. `/mcp` JSON-RPC handler dispatches to one of `initialize`, `tools/list`, `tools/call`.

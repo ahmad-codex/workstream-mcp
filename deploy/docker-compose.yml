@@ -112,6 +112,9 @@ services:
       WORKSTREAM_AUDIT_DISPATCH_ENABLED: "true"
       WORKSTREAM_AUDIT_DISPATCH_SCRIPT: /app/audit-dispatch.sh
       WS_REPOS_DIR: /srv/audit-repos
+      # Optional ssh-host MCP for audit runs (see deploy/audit-dispatch.sh).
+      WS_SSH_MCP_HOST: ${WS_SSH_MCP_HOST:-}
+      WS_SSH_MCP_USER: ${WS_SSH_MCP_USER:-deploy}
     secrets:
       - pg_password
       - gh_clone_token

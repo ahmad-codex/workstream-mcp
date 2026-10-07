@@ -15,7 +15,7 @@ services:
     ports:
       - "0.0.0.0:3010:8080"
     environment:
-      WORKSTREAM_PUBLIC_BASE_URL: "http://78.46.151.57:3010"
+      WORKSTREAM_PUBLIC_BASE_URL: "${WORKSTREAM_PUBLIC_BASE_URL:-http://YOUR_SERVER_IP:3010}"
 
   pgbouncer:
     # Override the base ports list. (Compose merges lists additively, but the

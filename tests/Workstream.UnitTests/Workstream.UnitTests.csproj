@@ -13,6 +13,9 @@
     <ProjectReference Include="..\..\src\Workstream.Core\Workstream.Core.csproj" />
     <ProjectReference Include="..\..\src\Workstream.GitHub\Workstream.GitHub.csproj" />
     <ProjectReference Include="..\..\src\Workstream.Slack\Workstream.Slack.csproj" />
+    <ProjectReference Include="..\..\src\Workstream.Telemetry\Workstream.Telemetry.csproj" />
+    <ProjectReference Include="..\..\src\Workstream.Api\Workstream.Api.csproj" />
+    <ProjectReference Include="..\..\tools\workstream-admin\workstream-admin.csproj" />
   </ItemGroup>
 
   <ItemGroup>

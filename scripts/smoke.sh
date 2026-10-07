@@ -4,7 +4,7 @@
 # review → done, and asserts the Slack post and board update both happened.
 #
 # Required env:
-#   WORKSTREAM_BASE         e.g. https://mcp-staging.wrkstream.xyz
+#   WORKSTREAM_BASE         e.g. https://mcp-staging.example.com
 #   WORKSTREAM_TEST_TOKEN   a URL token for a test user
 #   WORKSTREAM_TEST_PLAN_ID a dev-plan id pre-created with at least one pending task
 

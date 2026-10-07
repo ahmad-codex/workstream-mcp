@@ -13,7 +13,7 @@ Either way you do not need to pre-populate the board.
 
 For an org-owned board, the App must be created **under the org** so the installation is org-scoped and the App has access to org-level Projects.
 
-1. **`https://github.com/organizations/<ORG>/settings/apps/new`** (replace `<ORG>` with the org slug, e.g. `Crbrl-AI`).
+1. **`https://github.com/organizations/<ORG>/settings/apps/new`** (replace `<ORG>` with the org slug, e.g. `example-org`).
 2. Name: `Workstream`. Homepage URL: any placeholder. Webhook → **uncheck "Active"** for now (webhooks need a public URL — defer until you expose the API behind a hostname).
 3. **Permissions**:
    - **Repository permissions** → `Contents: Read-only`, `Issues: Read & write`
