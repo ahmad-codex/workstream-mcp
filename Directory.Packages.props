@@ -16,7 +16,7 @@
 
     <!-- Data -->
     <PackageVersion Include="Npgsql" Version="9.0.2" />
-    <PackageVersion Include="Dapper" Version="2.1.66" />
+    <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="FluentMigrator" Version="6.2.0" />
     <PackageVersion Include="FluentMigrator.Runner" Version="6.2.0" />
     <PackageVersion Include="FluentMigrator.Runner.Postgres" Version="6.2.0" />
