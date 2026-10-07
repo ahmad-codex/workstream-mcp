@@ -2,6 +2,10 @@
 #
 #   docker compose -f deploy/docker-compose.quickstart.yml up -d --build
 #
+# Or run the published image instead of building it:
+#   WORKSTREAM_IMAGE=ghcr.io/ahmad-codex/workstream-mcp:latest \
+#     docker compose -f deploy/docker-compose.quickstart.yml up -d --no-build
+#
 # No secret files, no GitHub App, no Slack, no dispatcher. Board sync and Slack outbox rows
 # are still written; they simply have nowhere to go until those integrations are configured.
 # The credentials below are for local use only. Do not expose this stack to a network.
@@ -23,6 +27,7 @@ services:
       retries: 10
 
   api:
+    image: ${WORKSTREAM_IMAGE:-workstream-mcp:local}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.api
