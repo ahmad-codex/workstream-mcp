@@ -1,0 +1,40 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "Breaking changes"
+    labels: ["breaking-change"]
+  - title: "Features"
+    labels: ["enhancement"]
+  - title: "Fixes"
+    labels: ["bug"]
+  - title: "Security"
+    labels: ["security"]
+  - title: "Documentation"
+    labels: ["documentation"]
+  - title: "Maintenance"
+    labels: ["ci", "dependencies", "tests"]
+exclude-labels: ["skip-changelog"]
+change-template: "- $TITLE (#$NUMBER, @$AUTHOR)"
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels: ["breaking-change"]
+  minor:
+    labels: ["enhancement"]
+  default: patch
+autolabeler:
+  - label: "bug"
+    branch: ['/^fix[/-]/i']
+    title: ['/^fix/i']
+  - label: "enhancement"
+    branch: ['/^feat(ure)?[/-]/i']
+    title: ['/^add /i', '/^feat/i']
+  - label: "documentation"
+    branch: ['/^docs?[/-]/i']
+    title: ['/^docs?/i']
+template: |
+  $CHANGES
+
+  Upgrading: the API applies new migrations on startup. Read the Breaking changes section first, if present.
+
+  Thanks to $CONTRIBUTORS for this release.
