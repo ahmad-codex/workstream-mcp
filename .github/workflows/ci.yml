@@ -2,9 +2,12 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
+
+permissions:
+  contents: read
 
 jobs:
   build-test:
@@ -29,7 +32,7 @@ jobs:
       - name: Integration tests
         run: dotnet test tests/Workstream.IntegrationTests --configuration Release --no-build --logger "trx;LogFileName=integration.trx"
 
-      - name: Concurrency tests (load-bearing — merge blocker if flaky)
+      - name: Concurrency tests (merge blocker if flaky)
         run: dotnet test tests/Workstream.ConcurrencyTests --configuration Release --no-build --logger "trx;LogFileName=concurrency.trx"
 
       - name: Upload test results
