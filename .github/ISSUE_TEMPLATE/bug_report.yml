@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The MCP tool calls, admin requests or compose commands that trigger it. Remove URL tokens and secrets.
+      placeholder: |
+        1. create_plan { ... }
+        2. claim_next_task { ... }
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error response or logs
+      description: The `{ ok, error }` payload or relevant log lines. Remove tokens before pasting.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: e.g. 0.1.0 or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: env
+    attributes:
+      label: How are you running it
+      options:
+        - docker compose (quick start)
+        - docker compose (production files)
+        - dotnet run
+        - other
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: e.g. Claude Code 2.x, Claude Desktop, Cursor
