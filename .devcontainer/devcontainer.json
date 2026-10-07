@@ -1,0 +1,23 @@
+{
+  "name": "workstream-mcp",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/workstream-mcp",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [8080, 5432],
+  "portsAttributes": {
+    "8080": { "label": "workstream API" },
+    "5432": { "label": "postgres" }
+  },
+  "postCreateCommand": "dotnet restore workstream-mcp.sln",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "editorconfig.editorconfig"
+      ]
+    }
+  }
+}

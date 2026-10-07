@@ -26,6 +26,9 @@ jobs:
       - name: Build
         run: dotnet build workstream-mcp.sln --configuration Release --no-restore
 
+      - name: Code style
+        run: dotnet format style workstream-mcp.sln --verify-no-changes --no-restore
+
       - name: Unit tests
         run: dotnet test tests/Workstream.UnitTests --configuration Release --no-build --logger "trx;LogFileName=unit.trx"
 
