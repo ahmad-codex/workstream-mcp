@@ -9,6 +9,11 @@ Thanks for taking the time to contribute. This file covers how to build, test an
 - For anything larger than a bug fix, open an issue first so the approach can be agreed
   before you write the code.
 
+## Where to start
+
+[docs/ROADMAP.md](./docs/ROADMAP.md) lists good first issues with pointers to the code, and the
+larger planned work.
+
 ## Prerequisites
 
 - .NET SDK 10 (the exact feature band is pinned in [`global.json`](./global.json))
@@ -31,8 +36,9 @@ dotnet test tests/Workstream.ConcurrencyTests
 dotnet test tests/Workstream.UnitTests --filter "FullyQualifiedName~StateMachineServiceTests"
 ```
 
-The build treats warnings as errors (`Directory.Build.props`). A change that adds a warning
-will fail CI.
+The build treats warnings as errors (`Directory.Build.props`) and enforces the code-style rules
+in [`.editorconfig`](./.editorconfig) at build time (`EnforceCodeStyleInBuild`). A change that
+adds a warning will fail CI. Configure your editor to honor `.editorconfig`.
 
 The concurrency tests in `tests/Workstream.ConcurrencyTests` are the correctness gate for the
 claim primitive. If they fail or flake, the change does not merge.

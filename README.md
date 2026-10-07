@@ -50,8 +50,11 @@ What the code does today:
   path and from logs.
 - **Audit dispatcher (optional).** `request_audit` queues an audit run; a sidecar container
   clones the repo and starts the project's audit orchestrator in a tmux session with Claude Code.
-- **Admin API and CLI.** `/admin/*` endpoints behind a static bearer token, plus a
-  `workstream-admin` CLI.
+- **Admin API and CLI.** `/admin/*` endpoints behind a static bearer token for users and
+  boards, plus a `workstream-admin` CLI for user management. Projects and plans are set up
+  through the admin-gated MCP tools.
+- **Stuck-work report.** An hourly job writes counts of expired claims, stale findings and idle
+  plans to `stuck_work_reports`.
 
 ## Architecture
 
@@ -245,7 +248,8 @@ Environment variables read by the API. Each `_FILE` variant reads the value from
 | `WORKSTREAM_AUDIT_DISPATCH_ENABLED` | dispatcher | `true` to run the audit dispatcher |
 | `WORKSTREAM_AUDIT_DISPATCH_SCRIPT` | dispatcher | Path to `audit-dispatch.sh` |
 | `WORKSTREAM_AUDIT_DISPATCH_TIMEOUT` | no | Dispatch script timeout in seconds |
-| `WORKSTREAM_OTEL_ENDPOINT` | no | OTLP endpoint (not yet wired, see Status) |
+| `WORKSTREAM_OTEL_ENDPOINT` | no | OTLP endpoint for traces and metrics. Unset means telemetry is off. The URL token is redacted from spans |
+| `WS_SSH_MCP_HOST` / `WS_SSH_MCP_USER` | dispatcher | Optional test host given to audit runs as an `ssh-host` MCP |
 
 Per-project Slack bot tokens are files under the secrets directory, referenced by
 `set_project_slack`. See [docs/slack-setup.md](./docs/slack-setup.md) and
@@ -278,20 +282,20 @@ dotnet run --project src/Workstream.Api
 - [Slack setup](./docs/slack-setup.md): bot token, channel, interactivity
 - [Audit dispatch](./docs/audit-dispatch.md): the dispatcher sidecar
 - [Deployment](./docs/deployment.md): production compose, PgBouncer, Caddy, backups
+- [Example audit orchestrator](./orchestrators/example/audit-orchestrator.md): a prompt that drives an audit plan end to end
+- [Roadmap](./docs/ROADMAP.md): planned work and good first issues
 - [Build specification](./workstream-mcp-spec.md): the full design
 
 ## Status
 
 Early, version 0.1.0. Known gaps:
 
-- The OpenTelemetry setup in `Workstream.Telemetry` is not yet wired into the API host, so
-  `WORKSTREAM_OTEL_ENDPOINT` currently has no effect.
-- The hourly stuck-work job (`StuckWorkJob`) exists but is not registered. Expired claims are
-  still reclaimable without it; `get_stuck_work` gives the same view on demand.
 - `claim_next_attempt_for_review` is a stub.
+- `workstream-admin apply` (declarative bootstrap) only prints the file.
+- The stuck-work report is stored but not yet posted to Slack.
 - Only the latest `master` is supported; there are no release branches.
 
-See [CHANGELOG.md](./CHANGELOG.md).
+See [CHANGELOG.md](./CHANGELOG.md) and the roadmap in [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Contributing
 

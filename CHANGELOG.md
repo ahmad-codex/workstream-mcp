@@ -8,12 +8,28 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Generic example audit orchestrator in `orchestrators/example/`.
+- `workstream-admin user create --admin`.
+- Unit tests for token redaction in traces and for the admin CLI request bodies.
 - MIT license, contributing guide, code of conduct, security policy, issue and pull request templates.
 - `deploy/docker-compose.quickstart.yml`: Postgres and the API only, for local evaluation.
 - Dependabot for NuGet and GitHub Actions, and a CodeQL workflow.
 
+### Changed
+
+- Docs, spec, deploy files and examples use neutral placeholders (`example-org`, `example.com`,
+  `YOUR_SERVER_IP`). The seed template is now `deploy/migrations/0007_seed_example.sql.example`.
+- The dispatcher's optional SSH MCP is named `ssh-host` and is configured with
+  `WS_SSH_MCP_HOST` / `WS_SSH_MCP_USER`; it is skipped when no host is set.
+- `workstream-admin`: removed the `project`, `plan` and `plan-type` commands, which called
+  endpoints the server does not have. Use the admin MCP setup tools instead.
+
 ### Fixed
 
+- OpenTelemetry is now wired into the API host when `WORKSTREAM_OTEL_ENDPOINT` is set, with the
+  URL token redacted from `url.path` on server spans.
+- The hourly `StuckWorkJob` is registered in the API role.
+- `workstream-admin user create` sent snake_case fields that the server ignored.
 - CI now runs on pushes and pull requests to `master` (it targeted `main`, which does not exist).
 
 ## [0.1.0] - 2026-05-23
