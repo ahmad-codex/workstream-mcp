@@ -9,7 +9,7 @@ namespace Workstream.Api.Middleware;
 /// <summary>
 /// Structured request log that redacts the URL-token path segment before any log line
 /// reaches Serilog or the OTel exporter (§13.1). The path is rewritten from
-/// <c>/{token}/mcp</c> to <c>/&lt;actor:moe&gt;/mcp</c> in trace/log output. The literal
+/// <c>/{token}/mcp</c> to <c>/&lt;actor:alice&gt;/mcp</c> in trace/log output. The literal
 /// token never appears.
 /// </summary>
 public sealed class RequestLoggingMiddleware

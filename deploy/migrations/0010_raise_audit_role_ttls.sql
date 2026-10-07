@@ -1,12 +1,11 @@
 -- Raise audit-profile role TTLs so verifier and fix_verifier subagents can finish
--- their Hetzner-routed reproductions before the claim expires. The old 15m TTL was
--- shorter than a typical verifier run (which builds Crbrl, ships artifacts via the
--- hetzner MCP, deploys, reproduces, and captures invariant evidence). When the
+-- reproductions on a remote test host before the claim expires. The old 15m TTL was
+-- shorter than a typical verifier run (which builds the project, ships artifacts to the
+-- test host, deploys, reproduces, and captures evidence). When the
 -- claim expired mid-run, submit_verification_verdict / submit_attempt / submit_findings
 -- all failed with stale_claim and the work could not be written back.
 --
--- The new 120m floor covers the longest verifier we have measured (98 min for the
--- F-R-6-1 TurboQuant fidelity reproduction including the source-tarball ship). The
+-- The new 120m floor covers the longest verifier run measured so far (98 min). The
 -- canonical source is deploy/profiles/audit.json; this migration keeps existing
 -- deployments aligned.
 --

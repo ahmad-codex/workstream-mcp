@@ -20,7 +20,10 @@
 #   WS_MCP_TOKEN        the triggering user's Workstream MCP token (credential)
 #   WS_REPOS_DIR        base dir for checkouts (default /srv/audit-repos)
 #   WS_GIT_TOKEN_FILE   GitHub token file for private clones (default /run/secrets/gh_clone_token)
-#   WS_SSH_KEY_FILE     SSH key file for the hetzner-moelabs MCP (default /run/secrets/ssh_mcp_key)
+#   WS_SSH_MCP_HOST     host for the optional ssh-host MCP (unset = not registered)
+#   WS_SSH_MCP_USER     SSH user for the ssh-host MCP (default deploy)
+#   WS_SSH_MCP_PORT     SSH port for the ssh-host MCP (default 22)
+#   WS_SSH_KEY_FILE     SSH key file for the ssh-host MCP (default /run/secrets/ssh_mcp_key)
 #   WS_SSH_PASS_FILE    SSH key passphrase file (default /run/secrets/ssh_mcp_passphrase)
 #
 # A non-zero exit tells the worker the dispatch failed; it retries with backoff.
@@ -159,25 +162,26 @@ else
   echo "[audit-dispatch] WARNING: no MCP token for the requesting user — /audit-run cannot reach Workstream" >&2
 fi
 
-# hetzner-moelabs MCP — stdio ssh-mcp to the host, for the orchestrator's test/verify
-# step. The SSH key (Docker secret) is copied to the auditor's ~/.ssh with 0600 perms.
+# ssh-host MCP (optional) — stdio ssh-mcp to a test host, for the orchestrator's
+# test/verify step. Registered only when WS_SSH_MCP_HOST is set and an SSH key exists.
+# The SSH key (Docker secret) is copied to the auditor's ~/.ssh with 0600 perms.
 SSH_KEY_SRC="${WS_SSH_KEY_FILE:-/run/secrets/ssh_mcp_key}"
 SSH_PASS_FILE="${WS_SSH_PASS_FILE:-/run/secrets/ssh_mcp_passphrase}"
-if [[ -s "${SSH_KEY_SRC}" ]]; then
+if [[ -n "${WS_SSH_MCP_HOST:-}" && -s "${SSH_KEY_SRC}" ]]; then
   install -d -m 700 -o auditor -g auditor /home/auditor/.ssh
-  ssh_key=/home/auditor/.ssh/hetzner_key
+  ssh_key=/home/auditor/.ssh/ssh_mcp_key
   cp "${SSH_KEY_SRC}" "${ssh_key}"
   chmod 600 "${ssh_key}"
   chown auditor:auditor "${ssh_key}"
   ssh_pass=""
   [[ -s "${SSH_PASS_FILE}" ]] && ssh_pass="$(tr -d '\r\n' < "${SSH_PASS_FILE}")"
-  register_mcp hetzner-moelabs -- npx ssh-mcp -y -- \
-    --host=78.46.151.57 --port=22 --user=root \
+  register_mcp ssh-host -- npx ssh-mcp -y -- \
+    --host="${WS_SSH_MCP_HOST}" --port="${WS_SSH_MCP_PORT:-22}" --user="${WS_SSH_MCP_USER:-deploy}" \
     --key="${ssh_key}" --keyPassphrase="${ssh_pass}" \
     --timeout=300000 --maxChars=none \
-    && echo "[audit-dispatch] registered hetzner-moelabs MCP"
+    && echo "[audit-dispatch] registered ssh-host MCP"
 else
-  echo "[audit-dispatch] no SSH key at ${SSH_KEY_SRC}; skipping hetzner-moelabs MCP"
+  echo "[audit-dispatch] WS_SSH_MCP_HOST unset or no SSH key at ${SSH_KEY_SRC}; skipping ssh-host MCP"
 fi
 
 # Launch the project's audit orchestrator as `auditor` in a detached, attachable tmux

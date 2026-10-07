@@ -40,7 +40,7 @@ desktop.ini
 # V2 node ids tied to a specific org). Docker build still copies them into the
 # image because docker doesn't honor .gitignore, so the seeds run as normal —
 # they just don't leak into git history.
-deploy/migrations/0007_seed_crbrl_ai.sql
+deploy/migrations/0007_seed_*.sql
 
 # Coverage
 coverage/

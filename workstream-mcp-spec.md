@@ -10,10 +10,10 @@ This document is the build specification for Claude Code. It is implementation-r
 
 **Suggested name: `workstream-mcp`**
 
-Rationale: the system manages workstreams (audit, development, testing, refactor, migration — any structured stream of tasks). The `-mcp` suffix signals it is the MCP server, not a client. Alternative if a CRBRL-prefixed name is preferred: `crbrl-workstream`. Avoid product-coupled names (no `swanaudit`, no `memturbo-flow`) — generality is the requirement.
+Rationale: the system manages workstreams (audit, development, testing, refactor, migration — any structured stream of tasks). The `-mcp` suffix signals it is the MCP server, not a client. Avoid product-coupled names — generality is the requirement.
 
 **Stack**
-- .NET 10 (matches MemTurboDB and the rest of the C# fleet)
+- .NET 10
 - ASP.NET Core minimal API host
 - Npgsql for Postgres
 - Dapper for the data layer (the queries are simple; an ORM is overkill and obstructs the `FOR UPDATE SKIP LOCKED` patterns the claim model depends on)
@@ -60,7 +60,7 @@ The system is generic; it does not know about audits specifically. The vocabular
 
 | Term | Meaning |
 |---|---|
-| Organization | Top-level tenant. For CRBRL there is effectively one. |
+| Organization | Top-level tenant. Most deployments have exactly one. |
 | Project | A product under management. Has zero or more GitHub repos, zero or more GitHub Project boards, a Slack workspace, a Slack channel. |
 | Plan | A versioned scope of work under a project. `audit`, `development`, `testing`, `refactor`, `migration` are plan **types**. A project can have many plans active at once. |
 | Phase | An ordered group of tasks within a plan. Optional structural layer. |
@@ -78,7 +78,7 @@ The system is generic; it does not know about audits specifically. The vocabular
 
 ## 3. Multi-Tenant Identity: URL-as-Credential
 
-The user requirement is: `mcp.wrkstream.xyz/<uniqueId>` per user, no traditional authentication, the unique id IS the authentication. This is a bearer-token-in-path model. It works for the threat model (trusted internal team, no public exposure to unknown actors), and it is plug-and-play in the sense that a new developer pastes one URL into their Claude config and is done. The spec below makes the token strong enough to survive that role.
+The user requirement is: `mcp.example.com/<uniqueId>` per user, no traditional authentication, the unique id IS the authentication. This is a bearer-token-in-path model. It works for the threat model (trusted internal team, no public exposure to unknown actors), and it is plug-and-play in the sense that a new developer pastes one URL into their Claude config and is done. The spec below makes the token strong enough to survive that role.
 
 ### 3.1 Token format and properties
 
@@ -89,7 +89,7 @@ The user requirement is: `mcp.wrkstream.xyz/<uniqueId>` per user, no traditional
 
 ### 3.2 Resolution flow
 
-When a request arrives at `https://mcp.wrkstream.xyz/<token>/...`:
+When a request arrives at `https://mcp.example.com/<token>/...`:
 1. The HTTP host strips the token from the path and looks up the user in a `users` table indexed on `mcp_url_token` (unique B-tree index).
 2. If not found, return 404. Do not return 401 — 401 leaks the existence of the namespace. 404 is indistinguishable from "no such route."
 3. If found and active, attach the `actor_id` and `actor_type` to the ambient `RequestContext` for the lifetime of the request. Every subsequent DB write and event emission uses this actor.
@@ -141,7 +141,7 @@ DDL is the authoritative artifact for this section. The English description belo
 **`projects`**
 - `id uuid pk`
 - `organization_id uuid fk`
-- `slug text unique not null` (e.g. `swanvault`, `memturbo`, `crbrl-core`)
+- `slug text unique not null` (e.g. `example-app`, `billing-service`)
 - `display_name text not null`
 - `description text`
 - `config jsonb not null default '{}'` (project-specific conventions: naming, conventions doc URLs, reference repo URLs)
@@ -153,7 +153,7 @@ DDL is the authoritative artifact for this section. The English description belo
 - `github_owner text not null`
 - `github_repo text not null`
 - `default_branch text not null default 'main'`
-- `is_reference_only boolean not null default false` (e.g. Chroma is reference for MemTurboDB)
+- `is_reference_only boolean not null default false` (e.g. an upstream project used as a design reference)
 - `unique (project_id, github_owner, github_repo)`
 
 **`project_boards`** — many GitHub Project (V2) boards per project. A repo can map to one or more boards.
@@ -213,7 +213,7 @@ DDL is the authoritative artifact for this section. The English description belo
 - `title text not null`
 - `description text`
 - `paths text[]` (files / modules covered)
-- `reference_pointer text` (e.g. an OpenBao path for SwanVault audit, or a design-doc URL for a dev task)
+- `reference_pointer text` (e.g. a secrets-manager path for an audit, or a design-doc URL for a dev task)
 - `priority int not null default 0`
 - `status text not null` (see state machine)
 - `assignee_actor_id uuid fk null` (set on first claim; persists for board sync even after claim release)
@@ -313,7 +313,7 @@ The board mapping in 7.4 takes precedence if defined on the board itself, fallin
 
 ### 5.2 The two seed plan types
 
-**`audit` profile** matches the original SwanAudit workflow. Roles: `auditor`, `verifier`, `fixer`, `fix_verifier`. TTLs: 30m / 15m / 45m / 15m. `requires_findings: true`. Retry cap: 3. The finding state machine and the per-finding sub-lifecycle described in the original SwanAudit doc, generalized: the `compression invariant gate` becomes a per-plan configurable `pre_fix_gate` JSONB that the fixer subagent is given as policy, not a hardcoded rule.
+**`audit` profile** matches a find, verify, fix, re-verify audit workflow. Roles: `auditor`, `verifier`, `fixer`, `fix_verifier`. TTLs: 30m / 15m / 45m / 15m. `requires_findings: true`. Retry cap: 3. The finding state machine and the per-finding sub-lifecycle are generalized: a project-specific invariant gate becomes a per-plan configurable `pre_fix_gate` JSONB that the fixer subagent is given as policy, not a hardcoded rule.
 
 **`development` profile**. Roles: `developer`, `reviewer`. TTLs: 4h / 1h. `requires_findings: false`. Retry cap: 3 (number of review rounds). No verifier/fix-verifier split — a dev task goes pending → claimed → in_progress → review → done, with the reviewer either approving (→ done) or requesting changes (→ in_progress, attempt counter increments).
 
@@ -524,7 +524,7 @@ Multi-step lifecycles (a task with several finding-and-fix cycles) get threaded:
 
 ## 9. MCP Tool Surface
 
-The MCP server exposes tools at `https://mcp.wrkstream.xyz/<token>/mcp` over the Streamable HTTP transport (the current MCP spec; SSE remains supported for backwards compat). The token in the path resolves the calling actor; every tool call inherits that actor context.
+The MCP server exposes tools at `https://mcp.example.com/<token>/mcp` over the Streamable HTTP transport (the current MCP spec; SSE remains supported for backwards compat). The token in the path resolves the calling actor; every tool call inherits that actor context.
 
 Tools cluster into six groups. All tool names are snake_case. All inputs and outputs are JSON. Every mutating tool runs in a single Postgres transaction and writes to the `events` table as part of that transaction.
 
@@ -648,18 +648,18 @@ A companion tool `workstream-admin` (in `tools/workstream-admin/`) is a .NET con
 
 Commands:
 ```
-workstream-admin user create --github-username moe --display "Mohamed" --type human
-workstream-admin user create --github-username swan-orchestrator --type orchestrator
-workstream-admin user rotate-token --github-username moe
-workstream-admin user grant --github-username moe --permission can_override_verdict
+workstream-admin user create --github-username alice --display "Alice" --type human
+workstream-admin user create --github-username example-orchestrator --type orchestrator
+workstream-admin user rotate-token --github-username alice
+workstream-admin user grant --github-username alice --permission can_override_verdict
 
-workstream-admin project create --slug memturbo --name "MemTurboDB"
-workstream-admin project add-repo --slug memturbo --owner precoglabs --repo memturbodb
-workstream-admin project add-reference-repo --slug memturbo --owner chroma-core --repo chroma
-workstream-admin project add-board --slug memturbo --project-v2-node-id PVT_xxx
-workstream-admin project set-slack --slug memturbo --workspace TXXXX --channel CXXXX
+workstream-admin project create --slug example-app --name "Example App"
+workstream-admin project add-repo --slug example-app --owner example-org --repo example-app
+workstream-admin project add-reference-repo --slug example-app --owner example-org --repo example-reference
+workstream-admin project add-board --slug example-app --project-v2-node-id PVT_xxx
+workstream-admin project set-slack --slug example-app --workspace TXXXX --channel CXXXX
 
-workstream-admin plan create --project memturbo --type audit --name "Phase 2 Audit"
+workstream-admin plan create --project example-app --type audit --name "Phase 2 Audit"
 workstream-admin plan activate --id <plan-id>
 
 workstream-admin plan-type list
@@ -679,19 +679,19 @@ plan_types:
   development: { file: profiles/development.json }
 
 users:
-  - github_username: moe
-    display_name: Mohamed
+  - github_username: alice
+    display_name: Alice
     type: human
     permissions: [can_override_verdict, can_archive_plan, can_mark_needs_human_review]
-  - github_username: swan-orchestrator
+  - github_username: example-orchestrator
     type: orchestrator
 
 projects:
-  - slug: memturbo
-    display_name: MemTurboDB
+  - slug: example-app
+    display_name: Example App
     repos:
-      - { owner: precoglabs, repo: memturbodb }
-      - { owner: chroma-core, repo: chroma, reference_only: true }
+      - { owner: example-org, repo: example-app }
+      - { owner: example-org, repo: example-reference, reference_only: true }
     boards:
       - project_v2_node_id: PVT_xxx
         column_mapping:
@@ -703,8 +703,8 @@ projects:
     slack:
       workspace_id: TXXXX
       channel_id: CXXXX
-      bot_token_secret_ref: vault://workstream/slack/memturbo
-  - slug: swanvault
+      bot_token_secret_ref: vault://workstream/slack/example-app
+  - slug: billing-service
     # ...
 ```
 
@@ -712,9 +712,9 @@ This file is the canonical operational artifact. Commit it to the workstream-mcp
 
 ### 10.3 URL surface
 
-The user-facing URL format `mcp.wrkstream.xyz/<token>` is constructed at user-creation time. The base host (`mcp.wrkstream.xyz`) is configured via `WORKSTREAM_PUBLIC_BASE_URL`. Token generation, storage, and rotation are described in Section 3.
+The user-facing URL format `mcp.example.com/<token>` is constructed at user-creation time. The base host (`mcp.example.com`) is configured via `WORKSTREAM_PUBLIC_BASE_URL`. Token generation, storage, and rotation are described in Section 3.
 
-For the curious: the actual MCP endpoint inside the host is the `/mcp` suffix per Streamable HTTP convention. The user's full Claude config URL is `https://mcp.wrkstream.xyz/<token>/mcp`. The bare `/<token>` returns a small JSON status page that confirms the token resolves to a valid user and shows the user's display name — useful for sanity-checking a copy-pasted URL before adding it to Claude.
+For the curious: the actual MCP endpoint inside the host is the `/mcp` suffix per Streamable HTTP convention. The user's full Claude config URL is `https://mcp.example.com/<token>/mcp`. The bare `/<token>` returns a small JSON status page that confirms the token resolves to a valid user and shows the user's display name — useful for sanity-checking a copy-pasted URL before adding it to Claude.
 
 ---
 
@@ -775,7 +775,7 @@ Results are written to a small `stuck_work_reports` table and posted to a `#work
 
 ### 11.5 Backups
 
-`pg_dump` runs nightly to a separate volume on the Hetzner host. Weekly copy to off-host storage. Restore drill quarterly: stand up a new pg instance, restore the latest dump, verify the system passes its smoke tests. The events table is part of the dump (it is the audit trail of the audit) and its durability matters as much as the primary state.
+`pg_dump` runs nightly to a separate volume on the host. Weekly copy to off-host storage. Restore drill quarterly: stand up a new pg instance, restore the latest dump, verify the system passes its smoke tests. The events table is part of the dump (it is the audit trail of the audit) and its durability matters as much as the primary state.
 
 ### 11.6 Deliverables
 
@@ -825,7 +825,7 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
-      WORKSTREAM_PUBLIC_BASE_URL: https://mcp.wrkstream.xyz
+      WORKSTREAM_PUBLIC_BASE_URL: https://mcp.example.com
       WORKSTREAM_DB_CONNECTION: "Host=postgres;Database=workstream;Username=workstream;Password=__from_secret__;Maximum Pool Size=50;Pooling=true"
       WORKSTREAM_DB_PASSWORD_FILE: /run/secrets/pg_password
       WORKSTREAM_ADMIN_TOKEN_FILE: /run/secrets/admin_token
@@ -855,13 +855,13 @@ The Slack bot tokens for each project are mounted as additional secrets, referen
 
 ### 12.2 Decision: no PgBouncer at v1
 
-The original SwanAudit doc called for PgBouncer. For this v1 with .NET 10 and Npgsql's built-in pooling, **PgBouncer is not needed** at the expected scale (low double-digit concurrent agents). Npgsql's pooler is mature and the transaction patterns here are short-lived. **Revisit** PgBouncer when concurrent agent count exceeds 50 or DB pool waits become non-trivial. Add it as a third container at that point without schema change.
+An earlier design called for PgBouncer. For this v1 with .NET 10 and Npgsql's built-in pooling, **PgBouncer is not needed** at the expected scale (low double-digit concurrent agents). Npgsql's pooler is mature and the transaction patterns here are short-lived. **Revisit** PgBouncer when concurrent agent count exceeds 50 or DB pool waits become non-trivial. Add it as a third container at that point without schema change.
 
 ### 12.3 Reverse proxy and TLS
 
-The Hetzner host runs Caddy (or the existing nginx, depending on what `hetzner-moelabs` MCP already operates) terminating TLS for `mcp.wrkstream.xyz` and proxying to the `api` container on port 8080. Caddy config:
+The host runs Caddy (or an existing nginx) terminating TLS for `mcp.example.com` and proxying to the `api` container on port 8080. Caddy config:
 ```caddyfile
-mcp.wrkstream.xyz {
+mcp.example.com {
   reverse_proxy api:8080
   log {
     format json
@@ -871,12 +871,12 @@ mcp.wrkstream.xyz {
 ```
 TLS via Let's Encrypt, automatic via Caddy. Important: configure Caddy access logs to **omit the path** (or redact the second path segment), since the URL token is in the path and shows up in default logs otherwise. See Section 14.
 
-### 12.4 Deployment via hetzner-moelabs
+### 12.4 Deployment
 
-The deployment flow uses the existing `hetzner-moelabs` MCP, mirroring how MemTurboDB is deployed:
+The deployment flow:
 1. Build the API image locally with `docker build -t workstream-mcp:<sha> -f deploy/Dockerfile.api .`.
-2. Push to the registry the Hetzner host can read (ghcr.io with the GH App credentials, or a private registry).
-3. Through `hetzner-moelabs`, pull and restart on the host with `docker compose pull && docker compose up -d`.
+2. Push to the registry the host can read (ghcr.io with the GH App credentials, or a private registry).
+3. Over SSH, pull and restart on the host with `docker compose pull && docker compose up -d`.
 4. Run migrations on the host: `docker compose exec api dotnet Workstream.Migrations.dll up`.
 
 A `deploy/migrate.sh` script encapsulates step 4 and is what CI runs after a successful container deploy.
@@ -891,7 +891,7 @@ The URL-as-credential model needs operational discipline to be secure. This sect
 
 - **Never log the path**. Caddy is configured with `request> uri redact` or its equivalent — the structured log format omits the path or substitutes `<redacted>` for the second segment.
 - **Never log the token**. The MCP server's logging middleware strips the path before any log line is written; only the resolved `actor_id` reaches the logs.
-- **Never include the token in error messages**, error pages, or trace exporters. OTel attribute `http.url` is replaced with the user-id-templated form `https://mcp.wrkstream.xyz/<user:moe>/mcp`.
+- **Never include the token in error messages**, error pages, or trace exporters. OTel attribute `http.url` is replaced with the user-id-templated form `https://mcp.example.com/<user:alice>/mcp`.
 - **Never put the token in webhook responses or any outbound HTTP** the server makes (e.g. GitHub callbacks).
 
 ### 13.2 Token transport hardening
@@ -943,7 +943,7 @@ This is the user's stated end-goal: "plug and play for a new developer just to a
 
 ```bash
 workstream-admin user create --github-username new-dev --display "New Developer" --type human
-# Output: User created. URL: https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
+# Output: User created. URL: https://mcp.example.com/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB
 # Copy this URL exactly. It will not be shown again.
 ```
 
@@ -954,7 +954,7 @@ Add to Claude config (`~/.claude/mcp.json` or the equivalent Claude UI):
 {
   "mcpServers": {
     "workstream": {
-      "url": "https://mcp.wrkstream.xyz/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
+      "url": "https://mcp.example.com/Yk8j2_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890aB/mcp",
       "transport": "http"
     }
   }
@@ -964,10 +964,10 @@ Done. The developer never sees a token prompt, never copies a GitHub PAT, never 
 
 ### 14.3 Daily workflow
 
-The developer says to Claude: "What can I pick up on the MemTurbo dev plan?"
+The developer says to Claude: "What can I pick up on the example-app dev plan?"
 
 Behind the scenes:
-1. Claude calls `list_plans({ project_id: <memturbo> })` → sees dev plan id.
+1. Claude calls `list_plans({ project_id: <example-app> })` → sees dev plan id.
 2. Claude calls `get_plan_dashboard(<dev_plan_id>)` → next 5 claimable tasks.
 3. Claude presents them, developer says "let's do the second one."
 4. Claude calls `claim_specific_task(<task_id>, "developer")`.
@@ -1078,7 +1078,7 @@ The three test projects, the smoke script, and a CI config (`.github/workflows/c
 
 ## 17. What is Explicitly Out of Scope for v1
 
-To match the spirit of the SwanAudit doc's section 12 and stay honest about complexity boundaries:
+To stay honest about complexity boundaries:
 
 - **Web UI**. The MCP tool surface and the admin CLI are the interface. A future React dashboard reads the same events table.
 - **PgBouncer**. Not needed at v1 scale. Add when needed; see Section 12.2.
@@ -1086,7 +1086,7 @@ To match the spirit of the SwanAudit doc's section 12 and stay honest about comp
 - **GitHub Issues sync**. The system writes to the Project V2 board only. Linking an issue to a task is one-way: the task knows about the issue if it was created from one, but the system does not write back to issues. Can be added; not v1.
 - **Cross-project analytics** ("which file has the most findings across all projects"). Schema supports it; queries and any UI come later.
 - **Per-user GitHub OAuth**. URL-token is the v1 auth model. OAuth is the v2 path if threat model expands.
-- **Multi-region or HA Postgres**. Single Hetzner instance is sufficient.
+- **Multi-region or HA Postgres**. A single instance is sufficient.
 - **RBAC beyond the small flag set**. The `users.can_*` flags are enough for v1.
 - **Automatic SLA escalation**. The stuck-work job surfaces issues to Slack; it does not auto-reassign.
 - **Plan-type editor UI**. Plan types are edited via the admin CLI's JSON-file path. A future UI is straightforward.
@@ -1124,8 +1124,8 @@ Roughly two to three weeks of focused engineering for v1. The order matters beca
 16. Stuck-work job and report (Section 11.3).
 17. Deployment artifacts: Dockerfile, compose, Caddyfile, migrate script (Section 12).
 18. Smoke test script (Section 16.4).
-19. Deploy to staging on Hetzner via `hetzner-moelabs` MCP.
-20. Create the first real project (MemTurbo or SwanVault), the first real plan, one test user, walk through the plug-and-play flow end to end.
+19. Deploy to a staging host.
+20. Create the first real project, the first real plan, one test user, walk through the plug-and-play flow end to end.
 
 By the end of week three, a developer or orchestrator can add their MCP URL to Claude and start consuming work. Everything beyond that is polish, additional plan types, and the orchestrator runtime that lives outside this server.
 
@@ -1137,7 +1137,7 @@ Implementation is considered complete when all of the following hold:
 
 1. **Multi-tenancy works**: two users with two different URL tokens can independently call `list_projects`, `claim_next_task`, and `submit_*` against the same plan, never see each other's claim tokens, and never collide.
 
-2. **Multi-project, multi-repo, multi-board**: a single deployed instance hosts at least two projects (e.g. `memturbo` and `swanvault`), each with its own repos, boards, and Slack channel. A user with a single MCP URL can act on both.
+2. **Multi-project, multi-repo, multi-board**: a single deployed instance hosts at least two projects (e.g. `example-app` and `billing-service`), each with its own repos, boards, and Slack channel. A user with a single MCP URL can act on both.
 
 3. **Board sync works in both directions**: an internal status change moves a card on the right board within 10 seconds; a manual board move ingests within 10 seconds via webhook; bidirectional syncing does not loop.
 
@@ -1153,7 +1153,7 @@ Implementation is considered complete when all of the following hold:
 
 9. **The plug-and-play story works**: a fresh developer, given only their MCP URL, can claim a task, do the work, submit it, and see the board update and the Slack notification, without any other configuration.
 
-10. **The audit story works**: an orchestrator agent, given only its MCP URL, can run the full per-feature loop from the MemTurbo audit master prompt — claim feature, spawn auditor, ingest findings, spawn verifier, ingest verdicts, spawn fixer, ingest attempts, spawn fix-verifier, ingest fix verdict, commit, move on — entirely through MCP tool calls, with no markdown plan file involved.
+10. **The audit story works**: an orchestrator agent, given only its MCP URL, can run the full per-feature loop from an audit orchestrator prompt (see `orchestrators/example/`) — claim feature, spawn auditor, ingest findings, spawn verifier, ingest verdicts, spawn fixer, ingest attempts, spawn fix-verifier, ingest fix verdict, commit, move on — entirely through MCP tool calls, with no markdown plan file involved.
 
 If any of these ten do not hold, v1 is not done.
 
@@ -1177,5 +1177,5 @@ A few things to internalize before writing code:
 
 **Two containers, no more.** Postgres + API. The temptation to add Redis for caching, a queue for outboxes, a separate event store for events, will be strong. Resist. The in-process cache plus LISTEN/NOTIFY plus a Postgres-backed outbox is enough for the load you actually have. Add infrastructure when you can point at a metric showing you need it, not before.
 
-Build it. Ship it to Hetzner. Connect one Claude session, then ten. Watch it run. The next document is the orchestrator-prompt spec that sits on top of this surface.
+Build it. Ship it. Connect one Claude session, then ten. Watch it run. The next document is the orchestrator-prompt spec that sits on top of this surface.
 

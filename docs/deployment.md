@@ -1,6 +1,6 @@
 # Deployment
 
-Containers on a Hetzner host, behind a TLS reverse proxy (§12):
+Containers on a single Linux host, behind a TLS reverse proxy (§12):
 
 | Container | Role |
 |---|---|
@@ -11,7 +11,7 @@ Containers on a Hetzner host, behind a TLS reverse proxy (§12):
 
 ## One-time setup
 
-1. Provision the host (already done if you have a working `hetzner-moelabs` deploy).
+1. Provision a Linux host.
 2. Install Docker + Docker Compose plugin.
 3. Install Caddy on the host (not in a container — it runs the public TLS endpoint).
 4. Create the `workstream-mcp` directory and clone this repo into it.
@@ -29,7 +29,7 @@ Drop the following into `deploy/secrets/` (the `.gitignore` excludes everything 
 | `slack-<project>`       | One per project — the Slack bot token |
 | `slack_signing_secret`  | Slack app signing secret — verifies inbound interactivity (the "View details" modal) |
 | `gh_clone_token`        | GitHub token the dispatcher uses to clone private project repos |
-| `ssh_mcp_key`           | SSH private key for the dispatcher's `hetzner-moelabs` MCP |
+| `ssh_mcp_key`           | SSH private key for the dispatcher's optional `ssh-host` MCP (set `WS_SSH_MCP_HOST` to enable it) |
 | `ssh_mcp_passphrase`    | Passphrase for `ssh_mcp_key` |
 
 Update `deploy/docker-compose.yml` to list any additional Slack secrets you add. The
@@ -39,7 +39,7 @@ are only needed once the audit dispatcher and Slack interactivity are in use.
 ## Caddy config
 
 ```caddyfile
-mcp.wrkstream.xyz {
+mcp.example.com {
   reverse_proxy api:8080
   encode gzip zstd
   header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
@@ -74,7 +74,7 @@ The API container runs migrations on startup (the `SqlMigrationRunner` in `Works
 ## Smoke
 
 ```bash
-WORKSTREAM_BASE=https://mcp.wrkstream.xyz \
+WORKSTREAM_BASE=https://mcp.example.com \
 WORKSTREAM_TEST_TOKEN=<a-test-user-token> \
 WORKSTREAM_TEST_PLAN_ID=<a-pre-created-dev-plan-id> \
 ./scripts/smoke.sh
