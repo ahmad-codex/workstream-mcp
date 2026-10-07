@@ -646,6 +646,8 @@ The user asked specifically for: configuration for users/repos/boards, configura
 
 A companion tool `workstream-admin` (in `tools/workstream-admin/`) is a .NET console app that calls the admin endpoints. Used by the system operator to bootstrap and maintain configuration. Why a CLI: faster than a web UI to build, gives reproducible scripts for environment recreation.
 
+Implementation status: the CLI currently implements `user create` (with `--admin`), `user rotate-token` and `user grant`, and `apply` only echoes the file. The project, plan and plan-type commands below are planned; until they exist, use the admin-gated MCP setup tools (`create_project`, `add_project_repo`, `add_project_board`, `set_project_slack`, `create_plan`, `activate_plan`).
+
 Commands:
 ```
 workstream-admin user create --github-username alice --display "Alice" --type human

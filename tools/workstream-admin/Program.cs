@@ -18,7 +18,12 @@ namespace Workstream.Admin;
 ///   * <c>WORKSTREAM_ADMIN_TOKEN</c> — the bearer token
 /// Optionally a <c>.workstream-admin.toml</c> in the working dir overrides these.
 ///
-/// Every command prints the request and response for auditability.
+/// Every command prints the server's response.
+///
+/// Projects, repos, boards, Slack settings and plans are managed through the admin-gated MCP
+/// setup tools (<c>create_project</c>, <c>add_project_repo</c>, <c>create_plan</c>,
+/// <c>activate_plan</c>, ...) called by a user created with <c>is_admin</c>; the server has
+/// no REST endpoints for them.
 /// </summary>
 public static class Program
 {
@@ -32,9 +37,6 @@ public static class Program
     {
         var root = new RootCommand("workstream-admin — operator CLI for the Workstream MCP server");
         root.Add(BuildUserCommand());
-        root.Add(BuildProjectCommand());
-        root.Add(BuildPlanCommand());
-        root.Add(BuildPlanTypeCommand());
         root.Add(BuildBootstrapCommand());
         return root;
     }
@@ -47,16 +49,18 @@ public static class Program
         var usernameOpt = new Option<string>("--github-username") { IsRequired = true };
         var displayOpt  = new Option<string?>("--display");
         var typeOpt     = new Option<string>("--type", () => "human");
+        var adminOpt    = new Option<bool>("--admin", () => false, "Allow the user to call the admin-gated setup tools");
         create.AddOption(usernameOpt);
         create.AddOption(displayOpt);
         create.AddOption(typeOpt);
-        create.SetHandler(async (string username, string? display, string type) =>
+        create.AddOption(adminOpt);
+        create.SetHandler(async (string username, string? display, string type, bool isAdmin) =>
         {
             var client = AdminClient.FromEnv();
-            var resp = await client.PostAsync("/admin/users", new { github_username = username, display_name = display, actor_type = type })
+            var resp = await client.PostAsync("/admin/users", new CreateUserBody(username, display, type, isAdmin))
                 .ConfigureAwait(false);
             Console.WriteLine(JsonSerializer.Serialize(resp, new JsonSerializerOptions { WriteIndented = true }));
-        }, usernameOpt, displayOpt, typeOpt);
+        }, usernameOpt, displayOpt, typeOpt, adminOpt);
         user.Add(create);
 
         var rotate = new Command("rotate-token", "Rotate a user's MCP URL token");
@@ -79,90 +83,12 @@ public static class Program
         {
             var client = AdminClient.FromEnv();
             await client.PostAsync($"/admin/users/{Uri.EscapeDataString(username)}/permissions",
-                new { permission = perm, value = true }).ConfigureAwait(false);
+                new GrantBody(perm, true)).ConfigureAwait(false);
             Console.WriteLine($"granted {perm} to {username}");
         }, grantUser, permOpt);
         user.Add(grant);
 
         return user;
-    }
-
-    private static Command BuildProjectCommand()
-    {
-        var project = new Command("project", "Project management");
-
-        var create = new Command("create");
-        var slug = new Option<string>("--slug") { IsRequired = true };
-        var name = new Option<string>("--name") { IsRequired = true };
-        create.AddOption(slug); create.AddOption(name);
-        create.SetHandler(async (string s, string n) =>
-        {
-            var c = AdminClient.FromEnv();
-            var r = await c.PostAsync("/admin/projects", new { slug = s, display_name = n }).ConfigureAwait(false);
-            Console.WriteLine(JsonSerializer.Serialize(r));
-        }, slug, name);
-        project.Add(create);
-
-        var addRepo = new Command("add-repo");
-        var p1 = new Option<string>("--slug") { IsRequired = true };
-        var owner = new Option<string>("--owner") { IsRequired = true };
-        var repo = new Option<string>("--repo") { IsRequired = true };
-        var refOnly = new Option<bool>("--reference-only", () => false);
-        addRepo.AddOption(p1); addRepo.AddOption(owner); addRepo.AddOption(repo); addRepo.AddOption(refOnly);
-        addRepo.SetHandler(async (string s, string o, string r, bool refonly) =>
-        {
-            var c = AdminClient.FromEnv();
-            var x = await c.PostAsync($"/admin/projects/{Uri.EscapeDataString(s)}/repos",
-                new { github_owner = o, github_repo = r, is_reference_only = refonly }).ConfigureAwait(false);
-            Console.WriteLine(JsonSerializer.Serialize(x));
-        }, p1, owner, repo, refOnly);
-        project.Add(addRepo);
-
-        return project;
-    }
-
-    private static Command BuildPlanCommand()
-    {
-        var plan = new Command("plan", "Plan management");
-        var create = new Command("create");
-        var projectOpt = new Option<string>("--project") { IsRequired = true };
-        var typeOpt    = new Option<string>("--type") { IsRequired = true };
-        var nameOpt    = new Option<string>("--name") { IsRequired = true };
-        create.AddOption(projectOpt); create.AddOption(typeOpt); create.AddOption(nameOpt);
-        create.SetHandler(async (string p, string t, string n) =>
-        {
-            var c = AdminClient.FromEnv();
-            var r = await c.PostAsync("/admin/plans", new { project_slug = p, plan_type = t, name = n }).ConfigureAwait(false);
-            Console.WriteLine(JsonSerializer.Serialize(r));
-        }, projectOpt, typeOpt, nameOpt);
-        plan.Add(create);
-
-        var activate = new Command("activate");
-        var idOpt = new Option<string>("--id") { IsRequired = true };
-        activate.AddOption(idOpt);
-        activate.SetHandler(async (string id) =>
-        {
-            var c = AdminClient.FromEnv();
-            var r = await c.PostAsync($"/admin/plans/{id}/activate", new { }).ConfigureAwait(false);
-            Console.WriteLine(JsonSerializer.Serialize(r));
-        }, idOpt);
-        plan.Add(activate);
-
-        return plan;
-    }
-
-    private static Command BuildPlanTypeCommand()
-    {
-        var pt = new Command("plan-type", "Plan-type definition management");
-        var list = new Command("list");
-        list.SetHandler(async () =>
-        {
-            var c = AdminClient.FromEnv();
-            var r = await c.GetAsync("/admin/plan-types").ConfigureAwait(false);
-            Console.WriteLine(JsonSerializer.Serialize(r));
-        });
-        pt.Add(list);
-        return pt;
     }
 
     private static Command BuildBootstrapCommand()
@@ -187,6 +113,12 @@ public static class Program
         return apply;
     }
 }
+
+/// <summary>Body of <c>POST /admin/users</c>. Serialized with web defaults (camelCase) to match the server's <c>CreateUserRequest</c>.</summary>
+public sealed record CreateUserBody(string GithubUsername, string? DisplayName, string ActorType, bool IsAdmin);
+
+/// <summary>Body of <c>POST /admin/users/{username}/permissions</c>.</summary>
+public sealed record GrantBody(string Permission, bool Value);
 
 internal sealed class AdminClient
 {
