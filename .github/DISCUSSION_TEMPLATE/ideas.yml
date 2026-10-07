@@ -1,0 +1,15 @@
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow does this help with?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: If it is a new plan type, can it be expressed as a state-graph profile?
+    validations:
+      required: true

@@ -1,0 +1,28 @@
+# Dev container: .NET 10 SDK plus Postgres 16. Docker-in-Docker (from devcontainer.json)
+# lets the Testcontainers-based integration and concurrency tests run inside the container.
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/dotnet:1-10.0
+    volumes:
+      - ..:/workspaces/workstream-mcp:cached
+    command: sleep infinity
+    environment:
+      WORKSTREAM_DB_CONNECTION: "Host=postgres;Port=5432;Database=workstream;Username=workstream;Password=workstream-dev"
+      WORKSTREAM_ADMIN_TOKEN: dev-admin-token
+      WORKSTREAM_PUBLIC_BASE_URL: http://localhost:8080
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: workstream
+      POSTGRES_USER: workstream
+      POSTGRES_PASSWORD: workstream-dev
+    volumes:
+      - devcontainer-pg:/var/lib/postgresql/data
+
+volumes:
+  devcontainer-pg:

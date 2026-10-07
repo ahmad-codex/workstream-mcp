@@ -1,0 +1,13 @@
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do? Replace any MCP URL token with <token>.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version

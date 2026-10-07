@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/ahmad-codex/workstream-mcp/discussions
+    about: Ask questions, share how you use workstream-mcp, or float an idea before opening an issue.
   - name: Report a security vulnerability
     url: https://github.com/ahmad-codex/workstream-mcp/security/advisories/new
     about: Please report security issues privately, not as a public issue.
