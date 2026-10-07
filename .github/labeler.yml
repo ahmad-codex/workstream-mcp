@@ -1,0 +1,34 @@
+# Path-based labels applied to pull requests by .github/workflows/labeler.yml.
+"area: mcp-tools":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.Mcp/**", "src/Workstream.Api/Mcp/**"]
+"area: state-machine":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.Core/**", "deploy/profiles/**"]
+"area: data":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.Data/**", "deploy/migrations/**"]
+"area: github":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.GitHub/**", "src/Workstream.Api/Webhooks/ProjectsWebhookController.cs"]
+"area: slack":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.Slack/**", "src/Workstream.Api/Webhooks/SlackInteractivityController.cs"]
+"area: dispatcher":
+  - changed-files:
+      - any-glob-to-any-file: ["src/Workstream.Api/Dispatch/**", "deploy/audit-dispatch.sh", "deploy/Dockerfile.dispatcher", "orchestrators/**"]
+"area: deploy":
+  - changed-files:
+      - any-glob-to-any-file: ["deploy/**", ".devcontainer/**"]
+"area: admin-cli":
+  - changed-files:
+      - any-glob-to-any-file: ["tools/**", "src/Workstream.Api/Endpoints/AdminEndpoints.cs"]
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ["tests/**"]
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "*.md", "workstream-mcp-spec.md"]
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**"]
