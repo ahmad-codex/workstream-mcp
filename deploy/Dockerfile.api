@@ -28,6 +28,7 @@ RUN dotnet publish src/Workstream.Api/Workstream.Api.csproj -c Release -o /publi
 RUN mkdir -p /publish/migrations && cp deploy/migrations/*.sql /publish/migrations/
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+LABEL io.modelcontextprotocol.server.name="io.github.ahmad-codex/workstream-mcp"
 WORKDIR /app
 # Runs as root inside the container. Docker secrets mount as root:root 0400 by
 # default on Linux (the per-service `mode:` override is silently ignored by the
