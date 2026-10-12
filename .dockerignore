@@ -1,0 +1,8 @@
+# Build output and local tooling never belong in an image build context.
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.vs/
+.vscode/
+.idea/
