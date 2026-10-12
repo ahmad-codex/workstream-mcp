@@ -1,0 +1,33 @@
+# All-in-one demo image: Postgres 16 and the API in one container, in demo mode.
+#
+#   docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/ahmad-codex/workstream-mcp:demo
+#
+# Seeds a demo admin user with the public token "demo-insecure-token", a project and an active
+# plan. Anyone who can reach the port is admin, so publish it on 127.0.0.1 only. Data is
+# discarded with the container. For real use, see deploy/docker-compose.yml.
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+WORKDIR /src
+
+COPY global.json NuGet.config Directory.Build.props Directory.Packages.props ./
+COPY src/ src/
+RUN dotnet publish src/Workstream.Api/Workstream.Api.csproj -c Release -o /publish /p:UseAppHost=false
+
+COPY deploy/migrations/ deploy/migrations/
+# Local operator seeds (gitignored 0007_seed_*.sql) must never end up in the demo image.
+RUN rm -f deploy/migrations/0007_seed_*.sql \
+ && mkdir -p /publish/migrations \
+ && cp deploy/migrations/*.sql /publish/migrations/
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+RUN apk add --no-cache postgresql16 postgresql16-contrib su-exec
+WORKDIR /app
+COPY --from=build /publish/ ./
+COPY deploy/demo-entrypoint.sh /usr/local/bin/workstream-demo
+RUN chmod +x /usr/local/bin/workstream-demo
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    WORKSTREAM_PUBLIC_BASE_URL=http://localhost:8080 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENTRYPOINT ["/usr/local/bin/workstream-demo"]
