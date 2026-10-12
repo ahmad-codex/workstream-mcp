@@ -1,18 +1,17 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.Options;
+using Workstream.Api;
+using Workstream.Api.Demo;
 using Workstream.Api.Dispatch;
 using Workstream.Api.Endpoints;
 using Workstream.Api.Mcp;
 using Workstream.Api.Middleware;
-using Workstream.Core.StateMachine;
 using Workstream.Data;
 using Workstream.Data.Migrations;
-using Workstream.Data.Repositories;
 using Workstream.Data.StuckWork;
 using Workstream.GitHub;
 using Workstream.Mcp;
-using Workstream.Mcp.Notifications;
 using Workstream.Slack;
 using Workstream.Telemetry;
 using Workstream.Api.Webhooks;
@@ -25,6 +24,10 @@ AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// MCP over stdio (--stdio or WORKSTREAM_TRANSPORT=stdio): no HTTP server, no workers.
+if (StdioServer.IsRequested(args, builder.Configuration))
+    return await StdioServer.RunAsync(args).ConfigureAwait(false);
+
 // A "dispatcher" replica runs only the audit-dispatch worker — no HTTP surface, no MCP
 // tools, no migrations, no Slack/GitHub workers. The default "api" role runs the full
 // server. The dispatcher is its own container (Dockerfile.dispatcher) because it needs
@@ -33,33 +36,15 @@ var role = builder.Configuration["WORKSTREAM_ROLE"] ?? "api";
 var isDispatcher = string.Equals(role, "dispatcher", StringComparison.OrdinalIgnoreCase);
 
 // ----- Configuration -----
-var dbConn         = BuildDbConnectionString(builder.Configuration);
+var dbConn         = HostSetup.BuildDbConnectionString(builder.Configuration)!;
 var adminToken     = ResolveSecret(builder.Configuration, "WORKSTREAM_ADMIN_TOKEN",   "WORKSTREAM_ADMIN_TOKEN_FILE");
+var demoEnabled    = DemoMode.IsEnabled(builder.Configuration);
 
-builder.Services.Configure<NpgsqlConnectionFactoryOptions>(o => o.ConnectionString = dbConn);
 builder.Services.AddSingleton<TokenResolutionMiddleware.IOptions>(
-    new TokenResolutionMiddleware.Options { AdminToken = adminToken });
+    new TokenResolutionMiddleware.Options { AdminToken = adminToken, DemoEnabled = demoEnabled });
 
-// ----- Data layer -----
-builder.Services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
-builder.Services.AddSingleton<IUserRepository, UserRepository>();
-builder.Services.AddSingleton<IProjectRepository, ProjectRepository>();
-builder.Services.AddSingleton<IPlanRepository, PlanRepository>();
-builder.Services.AddSingleton<IPlanTypeRepository, PlanTypeRepository>();
-builder.Services.AddSingleton<ITaskRepository, TaskRepository>();
-builder.Services.AddSingleton<IFindingRepository, FindingRepository>();
-builder.Services.AddSingleton<IAttemptRepository, AttemptRepository>();
-builder.Services.AddSingleton<IVerdictRepository, VerdictRepository>();
-builder.Services.AddSingleton<IEventRepository, EventRepository>();
-builder.Services.AddSingleton<IOutboxRepository, OutboxRepository>();
-
-// ----- Core services -----
-builder.Services.AddSingleton<IPlanTypeCache, PostgresPlanTypeCache>();
-builder.Services.AddSingleton<StateMachineService>();
-
-// ----- Outbox enqueue adapters -----
-builder.Services.AddSingleton<IBoardSyncEnqueue, OutboxBoardSyncEnqueue>();
-builder.Services.AddSingleton<ISlackNotifyEnqueue, OutboxSlackNotifyEnqueue>();
+// ----- Data layer, core services, outbox enqueue adapters -----
+builder.Services.AddWorkstreamData(dbConn);
 
 // ----- GitHub Projects V2 + Slack (api role only) -----
 if (!isDispatcher)
@@ -119,9 +104,16 @@ if (!isDispatcher)
 {
     using var scope = app.Services.CreateScope();
     var factory = scope.ServiceProvider.GetRequiredService<IDbConnectionFactory>();
-    var migrationsDir = ResolveMigrationsDir();
+    var migrationsDir = HostSetup.ResolveMigrationsDir();
     var runner = new SqlMigrationRunner(factory, migrationsDir);
     await runner.ApplyAsync().ConfigureAwait(false);
+
+    if (demoEnabled)
+    {
+        var demoLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("workstream.demo");
+        await DemoMode.SeedAsync(app.Services, demoLog).ConfigureAwait(false);
+        DemoMode.LogWarning(demoLog, builder.Configuration["WORKSTREAM_PUBLIC_BASE_URL"] ?? "http://localhost:8080");
+    }
 }
 
 if (isDispatcher)
@@ -129,7 +121,7 @@ if (isDispatcher)
     // The dispatcher has no HTTP surface — it just hosts the AuditDispatchWorker.
     // RunAsync keeps the process (and that background service) alive.
     await app.RunAsync().ConfigureAwait(false);
-    return;
+    return 0;
 }
 
 // ----- Middleware pipeline -----
@@ -148,6 +140,7 @@ app.MapSlackInteractivity();
 app.MapAdmin();
 
 await app.RunAsync().ConfigureAwait(false);
+return 0;
 
 
 // -------- helpers --------
@@ -161,38 +154,4 @@ static string ResolveSecret(IConfiguration cfg, string envKey, string? fileEnvKe
             value = File.ReadAllText(file).Trim();
     }
     return value;
-}
-
-// Resolves the Postgres connection string. If WORKSTREAM_DB_CONNECTION contains the
-// __from_secret__ placeholder (the pattern from §12.1), substitute it with the contents
-// of WORKSTREAM_DB_PASSWORD_FILE.
-static string BuildDbConnectionString(IConfiguration cfg)
-{
-    var conn = cfg["WORKSTREAM_DB_CONNECTION"] ?? Environment.GetEnvironmentVariable("WORKSTREAM_DB_CONNECTION") ?? "";
-    if (string.IsNullOrEmpty(conn))
-        throw new InvalidOperationException("WORKSTREAM_DB_CONNECTION must be set");
-    if (conn.Contains("__from_secret__", StringComparison.Ordinal))
-    {
-        var pwFile = cfg["WORKSTREAM_DB_PASSWORD_FILE"] ?? Environment.GetEnvironmentVariable("WORKSTREAM_DB_PASSWORD_FILE");
-        if (string.IsNullOrEmpty(pwFile) || !File.Exists(pwFile))
-            throw new InvalidOperationException("__from_secret__ placeholder requires WORKSTREAM_DB_PASSWORD_FILE pointing at a readable file");
-        var pw = File.ReadAllText(pwFile).Trim();
-        conn = conn.Replace("__from_secret__", pw, StringComparison.Ordinal);
-    }
-    return conn;
-}
-
-static string ResolveMigrationsDir()
-{
-    var candidates = new[]
-    {
-        Path.Combine(AppContext.BaseDirectory, "migrations"),
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "deploy", "migrations"),
-        Path.Combine(Directory.GetCurrentDirectory(), "deploy", "migrations"),
-    };
-    foreach (var c in candidates)
-    {
-        if (Directory.Exists(c)) return Path.GetFullPath(c);
-    }
-    return Path.GetFullPath(candidates[^1]);
 }

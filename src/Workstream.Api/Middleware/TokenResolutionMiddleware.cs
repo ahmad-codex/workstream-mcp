@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Workstream.Api.Demo;
 using Workstream.Core.Domain;
 using Workstream.Data.Repositories;
 
@@ -58,6 +59,12 @@ public sealed class TokenResolutionMiddleware
             return;
         }
         var token = segments[0];
+        // The demo token is public; it only resolves while demo mode is on.
+        if (!DemoMode.IsTokenAllowed(token, opts.DemoEnabled))
+        {
+            ctx.Response.StatusCode = 404;
+            return;
+        }
         var user = await users.ResolveByTokenAsync(token, ctx.RequestAborted).ConfigureAwait(false);
         if (user is null)
         {
@@ -125,7 +132,12 @@ public sealed class TokenResolutionMiddleware
     public sealed class Options : IOptions
     {
         public string AdminToken { get; init; } = "";
+        public bool DemoEnabled { get; init; }
     }
 
-    public interface IOptions { string AdminToken { get; } }
+    public interface IOptions
+    {
+        string AdminToken { get; }
+        bool DemoEnabled => false;
+    }
 }
