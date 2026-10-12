@@ -9,6 +9,20 @@ An MCP server that keeps the state of record for work done by AI agents and huma
 plans, tasks, claims, findings, fix attempts and verdicts, stored in Postgres, mirrored to
 GitHub Projects and Slack.
 
+## Try it in 30 seconds
+
+One container with Postgres and the server in demo mode, seeded with a project, an active plan
+and three tasks:
+
+```bash
+docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/ahmad-codex/workstream-mcp:demo
+claude mcp add --transport http workstream-demo http://localhost:8080/demo-insecure-token/mcp
+```
+
+Then ask Claude to "list the workstream projects and claim the next task on the demo plan".
+The demo token is public and gives admin rights, so keep the port on `127.0.0.1`; the server
+refuses that token whenever demo mode is off. Data is gone when the container stops.
+
 ## Set it up with Claude Code
 
 Clone the repo, open Claude Code in it, and paste:
@@ -190,6 +204,30 @@ this file, so use the `mcp-remote` bridge (needs Node.js):
 If the server is reachable from the internet over HTTPS, you can instead add the URL as a
 custom connector in Claude Desktop's settings.
 
+**stdio** (any client). The same binary speaks MCP over stdin/stdout with `--stdio`, acting as
+the user whose token is in `WORKSTREAM_USER_TOKEN` against the database in
+`WORKSTREAM_DB_CONNECTION` (an HTTP server must still be running somewhere to drain the GitHub
+and Slack outboxes):
+
+```json
+{
+  "mcpServers": {
+    "workstream": {
+      "command": "dotnet",
+      "args": ["/path/to/Workstream.Api.dll", "--stdio"],
+      "env": {
+        "WORKSTREAM_DB_CONNECTION": "Host=localhost;Database=workstream;Username=workstream;Password=...",
+        "WORKSTREAM_USER_TOKEN": "<token>"
+      }
+    }
+  }
+}
+```
+
+Without `WORKSTREAM_DB_CONNECTION`, `--stdio` starts in discovery mode: `initialize` and
+`tools/list` work and every tool call returns a `not_configured` error. Directory scanners such
+as Glama use this mode.
+
 **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
 
 ```json
@@ -267,6 +305,9 @@ Environment variables read by the API. Each `_FILE` variant reads the value from
 | `WORKSTREAM_GH_WEBHOOK_SECRET` / `_FILE` | for GitHub | Webhook HMAC secret |
 | `WORKSTREAM_SLACK_SIGNING_SECRET` / `_FILE` | for Slack buttons | Slack signing secret |
 | `WORKSTREAM_ROLE` | no | `api` (default) or `dispatcher` |
+| `WORKSTREAM_TRANSPORT` | no | `stdio` to serve MCP over stdin/stdout (same as `--stdio`) |
+| `WORKSTREAM_USER_TOKEN` | stdio | The user the stdio server acts as |
+| `WORKSTREAM_DEMO` | no | `true` seeds demo data and accepts the public demo token. Local trials only |
 | `WORKSTREAM_AUDIT_DISPATCH_ENABLED` | dispatcher | `true` to run the audit dispatcher |
 | `WORKSTREAM_AUDIT_DISPATCH_SCRIPT` | dispatcher | Path to `audit-dispatch.sh` |
 | `WORKSTREAM_AUDIT_DISPATCH_TIMEOUT` | no | Dispatch script timeout in seconds |

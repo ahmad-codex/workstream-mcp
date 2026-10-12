@@ -8,6 +8,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- `--stdio` transport, with a discovery mode (no database) that answers `initialize` and `tools/list` and refuses tool calls with `not_configured`.
+- Demo mode (`WORKSTREAM_DEMO=true`) and an all-in-one image `ghcr.io/ahmad-codex/workstream-mcp:demo` that seeds a demo user, project, plan and tasks. The public demo token is refused when demo mode is off.
+- MCP `ping`.
+- `glama.json` and `deploy/Dockerfile.glama`.
 - Integration coverage for the hourly stuck-work report, including expired task claims and stale findings.
 - Docker image published to `ghcr.io/ahmad-codex/workstream-mcp` on version tags; the quick-start compose file can use it.
 - Dev container / Codespaces setup with .NET 10 and Postgres 16, and a `Makefile`.
