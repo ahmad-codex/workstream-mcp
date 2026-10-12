@@ -136,6 +136,16 @@ public sealed class DemoAndStdioModeTests
         probe.Calls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task PingReturnsEmptyResult()
+    {
+        var response = await McpProtocol.HandleAsync(
+            new McpProtocol.JsonRpcRequest("2.0", 7, "ping", null), ctx: null,
+            new Dictionary<string, IMcpTool>(), CancellationToken.None);
+
+        JsonSerializer.Serialize(response, McpProtocol.JsonOpts).Should().Be("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}");
+    }
+
     private static async Task<(int Status, List<string> Lookups)> InvokeMiddlewareAsync(string path, bool demoEnabled)
     {
         var lookups = new List<string>();

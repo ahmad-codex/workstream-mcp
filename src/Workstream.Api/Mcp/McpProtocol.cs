@@ -64,6 +64,9 @@ public static class McpProtocol
             case "tools/call":
                 return await CallToolAsync(req, ctx, tools, ct).ConfigureAwait(false);
 
+            case "ping":
+                return Result(req.Id, new { });
+
             default:
                 return Error(req.Id, -32601, $"unknown method '{req.Method}'");
         }
