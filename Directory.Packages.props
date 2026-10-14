@@ -15,7 +15,7 @@
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="0.4.0-preview.1" />
 
     <!-- Data -->
-    <PackageVersion Include="Npgsql" Version="9.0.2" />
+    <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="FluentMigrator" Version="8.0.1" />
     <PackageVersion Include="FluentMigrator.Runner" Version="8.0.1" />
