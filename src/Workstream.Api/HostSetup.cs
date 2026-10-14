@@ -29,6 +29,7 @@ public static class HostSetup
         services.AddSingleton<IVerdictRepository, VerdictRepository>();
         services.AddSingleton<IEventRepository, EventRepository>();
         services.AddSingleton<IOutboxRepository, OutboxRepository>();
+        services.AddSingleton<IBoardQueries, BoardQueries>();
 
         services.AddSingleton<IPlanTypeCache, PostgresPlanTypeCache>();
         services.AddSingleton<StateMachineService>();

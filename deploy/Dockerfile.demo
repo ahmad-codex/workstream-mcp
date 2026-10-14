@@ -6,11 +6,20 @@
 # plan. Anyone who can reach the port is admin, so publish it on 127.0.0.1 only. Data is
 # discarded with the container. For real use, see deploy/docker-compose.yml.
 
+# The web dashboard (ui/) is a static build served by the API under /{token}/ui/.
+FROM node:22-alpine AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui/ ./
+RUN npm run build -- --outDir /ui-dist --emptyOutDir
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
 COPY global.json NuGet.config Directory.Build.props Directory.Packages.props ./
 COPY src/ src/
+COPY --from=ui /ui-dist/ src/Workstream.Api/wwwroot/ui/
 RUN dotnet publish src/Workstream.Api/Workstream.Api.csproj -c Release -o /publish /p:UseAppHost=false
 
 COPY deploy/migrations/ deploy/migrations/

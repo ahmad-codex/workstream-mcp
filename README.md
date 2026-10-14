@@ -9,6 +9,8 @@ An MCP server that keeps the state of record for work done by AI agents and huma
 plans, tasks, claims, findings, fix attempts and verdicts, stored in Postgres, mirrored to
 GitHub Projects and Slack.
 
+![Workstream dashboard: two agents holding claims, one task in review](./docs/images/dashboard.png)
+
 ## Try it in 30 seconds
 
 One container with Postgres and the server in demo mode, seeded with a project, an active plan
@@ -22,6 +24,10 @@ claude mcp add --transport http workstream-demo http://localhost:8080/demo-insec
 Then ask Claude to "list the workstream projects and claim the next task on the demo plan".
 The demo token is public and gives admin rights, so keep the port on `127.0.0.1`; the server
 refuses that token whenever demo mode is off. Data is gone when the container stops.
+
+Open http://localhost:8080/demo-insecure-token/ui/ to watch the plan on the [dashboard](./docs/dashboard.md).
+To see agents race for tasks, start the container with `-e WORKSTREAM_ADMIN_TOKEN=local-admin` and
+run `WORKSTREAM_ADMIN_TOKEN=local-admin node scripts/simulate-agents.mjs`.
 
 ## Set it up with Claude Code
 
@@ -74,6 +80,9 @@ What the code does today:
   personas for agent posts, and interactive buttons verified with the Slack signing secret.
 - **Outboxes.** GitHub and Slack calls are queued in `board_sync_log` and `slack_notify_log`
   inside the request transaction and drained by background workers with retries.
+- **Web dashboard.** A read-only board per plan at `/<token>/ui/`: tasks by status, claim holders
+  with a TTL countdown, dependencies, stuck work and the event timeline of every task. See
+  [docs/dashboard.md](./docs/dashboard.md).
 - **URL-as-credential auth.** Each user gets a URL like `https://host/<token>/mcp`. Pasting it
   into an MCP client is the whole setup. Tokens can be rotated; the token is stripped from the
   path and from logs.
@@ -346,6 +355,7 @@ dotnet run --project src/Workstream.Api
 - [Audit dispatch](./docs/audit-dispatch.md): the dispatcher sidecar
 - [Deployment](./docs/deployment.md): production compose, PgBouncer, Caddy, backups
 - [Example audit orchestrator](./orchestrators/example/audit-orchestrator.md): a prompt that drives an audit plan end to end
+- [Dashboard](./docs/dashboard.md): the read-only web view and its API
 - [Roadmap](./ROADMAP.md): Now, Next and Later
 - [Build specification](./docs/spec.md): the full design
 
