@@ -28,7 +28,7 @@ tests:
       - any-glob-to-any-file: ["tests/**"]
 documentation:
   - changed-files:
-      - any-glob-to-any-file: ["docs/**", "*.md", "workstream-mcp-spec.md"]
+      - any-glob-to-any-file: ["docs/**", "*.md"]
 ci:
   - changed-files:
       - any-glob-to-any-file: [".github/**"]

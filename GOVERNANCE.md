@@ -8,7 +8,7 @@ who has final say on design, merges and releases.
 - Small changes (fixes, docs, tests) are decided in the pull request.
 - Changes to the MCP tool contracts, the database schema, the state-graph format or the
   security model start as an issue or a Discussion so the trade-offs are written down before
-  code is reviewed. [workstream-mcp-spec.md](./workstream-mcp-spec.md) is the design reference;
+  code is reviewed. [docs/spec.md](./docs/spec.md) is the design reference;
   a change that contradicts it updates the spec in the same pull request.
 - Every merge to `master` needs a passing CI run.
 

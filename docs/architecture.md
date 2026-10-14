@@ -1,6 +1,6 @@
 # Architecture
 
-`workstream-mcp` is the state-of-record for AI-driven and human-driven software work across many products, repos, GitHub Project boards, and users. The full design specification is [`workstream-mcp-spec.md`](../workstream-mcp-spec.md); this document summarizes the running shape.
+`workstream-mcp` is the state-of-record for AI-driven and human-driven software work across many products, repos, GitHub Project boards, and users. The full design specification is [`spec.md`](./spec.md); this document summarizes the running shape.
 
 ## The system in one paragraph
 
@@ -92,7 +92,7 @@ submit_attempt                 ─────────────►  attem
 
 ## Pointers
 
-- Spec: [`workstream-mcp-spec.md`](../workstream-mcp-spec.md) is authoritative.
+- Spec: [`spec.md`](./spec.md) is authoritative.
 - State machine details: [`state-machine.md`](./state-machine.md).
 - MCP tool list: [`mcp-tools.md`](./mcp-tools.md).
 - Deployment recipe: [`deployment.md`](./deployment.md).
