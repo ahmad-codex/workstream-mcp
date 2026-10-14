@@ -11,8 +11,8 @@ Thanks for taking the time to contribute. This file covers how to build, test an
 
 ## Where to start
 
-[docs/ROADMAP.md](./docs/ROADMAP.md) lists good first issues with pointers to the code, and the
-larger planned work.
+[ROADMAP.md](./ROADMAP.md) lists planned work. Each [good first issue](https://github.com/ahmad-codex/workstream-mcp/labels/good%20first%20issue)
+says where to start in the code and when it is done.
 
 ## Prerequisites
 
