@@ -4,8 +4,9 @@ Workstream is the shared ledger under your agents. Tools like Vibe Kanban, Condu
 Squad and Task Master run agents; Workstream makes sure two of them never take the same task,
 that every change goes through review, and that you can replay what happened afterwards.
 
-This file is the plan, and each item links to an issue you can pick up. There are no dates:
-items move from Next to Now when someone is working on them.
+This file is the plan, and each item links to an issue you can pick up. The
+[roadmap board](https://github.com/users/ahmad-codex/projects/1) is the live view. There are no
+dates: items move from Next to Now when someone is working on them.
 
 ## Now
 
