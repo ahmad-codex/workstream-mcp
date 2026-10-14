@@ -122,6 +122,7 @@ async function developer(agent, planId) {
 }
 
 async function reviewer(agent, planId) {
+  const sentBack = new Set();
   while (done < rounds) {
     const board = await fetch(`${base}/${agent.token}/api/plans/${planId}/board`).then((r) => r.json());
     const inReview = board.data.tasks.filter((t) => t.status === 'review');
@@ -132,14 +133,17 @@ async function reviewer(agent, planId) {
     }
     const task = inReview[0];
     await sleep(jitter(4000, 8000));
+    // Send about a third of first submissions back, so the board shows rework too.
+    const approve = sentBack.has(task.id) || Math.random() > 0.3;
     await call(agent.token, 'submit_review_decision', {
       taskId: task.id,
-      decision: 'approved',
-      comments: 'Looks good.',
+      decision: approve ? 'approved' : 'changes_requested',
+      comments: approve ? 'Looks good.' : 'Please add a test for the failure path.',
       as_agent: 'reviewer',
     });
-    done++;
-    log(agent.name, `approved ${task.externalKey}`);
+    if (approve) done++;
+    else sentBack.add(task.id);
+    log(agent.name, `${approve ? 'approved' : 'requested changes on'} ${task.externalKey}`);
   }
 }
 
