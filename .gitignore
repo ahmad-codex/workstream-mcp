@@ -50,3 +50,7 @@ coverage/
 # Logs
 *.log
 logs/
+
+# Dashboard build output and dependencies
+ui/node_modules/
+src/Workstream.Api/wwwroot/ui/
