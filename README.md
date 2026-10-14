@@ -346,19 +346,19 @@ dotnet run --project src/Workstream.Api
 - [Audit dispatch](./docs/audit-dispatch.md): the dispatcher sidecar
 - [Deployment](./docs/deployment.md): production compose, PgBouncer, Caddy, backups
 - [Example audit orchestrator](./orchestrators/example/audit-orchestrator.md): a prompt that drives an audit plan end to end
-- [Roadmap](./docs/ROADMAP.md): planned work and good first issues
+- [Roadmap](./ROADMAP.md): Now, Next and Later
 - [Build specification](./docs/spec.md): the full design
 
 ## Status
 
-Early, version 0.1.0. Known gaps:
+Early, version 0.1.4. Known gaps:
 
 - `claim_next_attempt_for_review` is a stub.
 - `workstream-admin apply` (declarative bootstrap) only prints the file.
 - The stuck-work report is stored but not yet posted to Slack.
 - Only the latest `master` is supported; there are no release branches.
 
-See [CHANGELOG.md](./CHANGELOG.md) and the roadmap in [docs/ROADMAP.md](./docs/ROADMAP.md).
+See [CHANGELOG.md](./CHANGELOG.md) and the [roadmap](./ROADMAP.md).
 
 ## Community
 
@@ -369,8 +369,8 @@ See [CHANGELOG.md](./CHANGELOG.md) and the roadmap in [docs/ROADMAP.md](./docs/R
 
 ## Contributing
 
-Start with [CONTRIBUTING.md](./CONTRIBUTING.md) and the good first issues in
-[docs/ROADMAP.md](./docs/ROADMAP.md). The repository opens in a dev container or GitHub
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md) and the
+[good first issues](https://github.com/ahmad-codex/workstream-mcp/labels/good%20first%20issue). Planned work is in [ROADMAP.md](./ROADMAP.md). The repository opens in a dev container or GitHub
 Codespaces with the .NET 10 SDK and Postgres ready.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ahmad-codex/workstream-mcp)
