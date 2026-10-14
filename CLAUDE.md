@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this codebase is
 
-`workstream-mcp` is the MCP server that holds **workflow state** for AI agents and humans collaborating on software work across many products, repos, GitHub Project boards, and users. The full build specification lives in [`workstream-mcp-spec.md`](./workstream-mcp-spec.md) at the repo root — it is implementation-ready and authoritative. **Read it before making non-trivial changes.**
+`workstream-mcp` is the MCP server that holds **workflow state** for AI agents and humans collaborating on software work across many products, repos, GitHub Project boards, and users. The full build specification lives in [`docs/spec.md`](./docs/spec.md) — it is implementation-ready and authoritative. **Read it before making non-trivial changes.**
 
 ## External documentation
 
@@ -75,4 +75,4 @@ The spec's Section 18 orders the work: scaffold → schema → seed plan types �
 
 ## Acceptance criteria
 
-`workstream-mcp-spec.md` §19 defines v1 done. The ten points are the merge gate. The two most likely-to-fail under load are §19.5 (concurrency tests must not flake) and §19.3 (bidirectional board sync without loops — the outbox marker pattern in `BoardSyncWorker` is what prevents echoes).
+`docs/spec.md` §19 defines v1 done. The ten points are the merge gate. The two most likely-to-fail under load are §19.5 (concurrency tests must not flake) and §19.3 (bidirectional board sync without loops — the outbox marker pattern in `BoardSyncWorker` is what prevents echoes).

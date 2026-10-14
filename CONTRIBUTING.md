@@ -4,7 +4,7 @@ Thanks for taking the time to contribute. This file covers how to build, test an
 
 ## Before you start
 
-- Read [`workstream-mcp-spec.md`](./workstream-mcp-spec.md). It is the design reference, and
+- Read [`docs/spec.md`](./docs/spec.md). It is the design reference, and
   most review comments come back to it.
 - For anything larger than a bug fix, open an issue first so the approach can be agreed
   before you write the code.

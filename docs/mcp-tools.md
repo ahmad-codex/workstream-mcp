@@ -2,7 +2,7 @@
 
 Every tool is a class in `src/Workstream.Mcp/Tools/` implementing `IMcpTool`. Tools have a typed input record (deserialized from the JSON arguments) and a typed output, wrapped on the wire in `{ ok, data, error }` per §9.7. Descriptions on each tool are deliberately verbose because the calling LLM reads them.
 
-The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `initialize`, `tools/list`, `tools/call`.
+The wire protocol is JSON-RPC 2.0, over HTTP POST to `/<token>/mcp` or over stdio (`--stdio`). Methods: `initialize`, `tools/list`, `tools/call` and `ping`.
 
 ## Discovery and dashboards (§9.1)
 
@@ -22,6 +22,7 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 | `claim_next_finding_for_verification` | Audit only — pending-verification finding |
 | `claim_next_finding_for_fix` | Audit only — confirmed (or below-cap fix_failed) finding |
 | `claim_next_attempt_for_review` | Reserved for future queue model (v1 stub) |
+| `refresh_claim` | Extend a live claim's TTL without releasing it (`extend_by`, e.g. `30m`) |
 | `release_claim` | Surface work back to the pool without submitting |
 
 ## Work submission (§9.3)
@@ -50,6 +51,7 @@ The wire protocol is JSON-RPC 2.0 over HTTP POST to `/mcp`. Three methods: `init
 | Tool | Purpose |
 |---|---|
 | `get_event_log` | Forensic timeline for one entity |
+| `get_finding` | Full body of one finding (repro steps, root cause, expected vs actual); no claim needed |
 | `get_stuck_work` | On-demand view of the same data the hourly job computes |
 | `export_plan` | markdown or json snapshot of a plan |
 

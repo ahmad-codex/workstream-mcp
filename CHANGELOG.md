@@ -6,13 +6,44 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The design spec moved from the repo root to `docs/spec.md`.
+- `docs/mcp-tools.md` documents `refresh_claim`, `get_finding`, `ping` and the stdio transport.
+- The README no longer implies that inbound GitHub board moves are applied; the webhook is verified only.
+- CI builds the API Docker image on pull requests.
+
+## [0.1.4] - 2026-10-12
+
 ### Added
 
 - `--stdio` transport, with a discovery mode (no database) that answers `initialize` and `tools/list` and refuses tool calls with `not_configured`.
 - Demo mode (`WORKSTREAM_DEMO=true`) and an all-in-one image `ghcr.io/ahmad-codex/workstream-mcp:demo` that seeds a demo user, project, plan and tasks. The public demo token is refused when demo mode is off.
 - MCP `ping`.
 - `glama.json` and `deploy/Dockerfile.glama`.
+
+### Fixed
+
+- The first-interaction workflow uses the v3 input name for its token.
+
+## [0.1.3] - 2026-10-08
+
+### Added
+
+- MCP Registry metadata (`server.json`) and the ownership label on the API image.
 - Integration coverage for the hourly stuck-work report, including expired task claims and stale findings.
+- A Claude Code setup prompt in the README.
+
+## [0.1.2] - 2026-10-07
+
+### Changed
+
+- Updated Microsoft.Extensions, FluentMigrator, Testcontainers and GitHub Actions dependencies.
+
+## [0.1.1] - 2026-10-07
+
+### Added
+
 - Docker image published to `ghcr.io/ahmad-codex/workstream-mcp` on version tags; the quick-start compose file can use it.
 - Dev container / Codespaces setup with .NET 10 and Postgres 16, and a `Makefile`.
 - CODEOWNERS, question issue form, Discussions templates, path labeler, first-interaction greeting, stale policy and release-drafter.
@@ -71,5 +102,9 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ahmad-codex/workstream-mcp/releases/tag/v0.1.0

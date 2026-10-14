@@ -68,8 +68,8 @@ What the code does today:
 - **Append-only event log.** Every state change writes an `events` row. Triggers block `UPDATE`
   and `DELETE` on `events` and `verdicts`.
 - **GitHub Projects V2 sync.** Tasks become issues (or draft items for repo-less projects) on a
-  Projects V2 board, columns follow task status, and audit plans get a milestone. Inbound board
-  moves arrive through a signed webhook. Uses a GitHub App.
+  Projects V2 board, columns follow task status, and audit plans get a milestone. A signed webhook
+  endpoint verifies inbound board events, but does not apply them yet (see the roadmap). Uses a GitHub App.
 - **Slack notifications.** Block Kit messages per project channel, threaded per task, with role
   personas for agent posts, and interactive buttons verified with the Slack signing secret.
 - **Outboxes.** GitHub and Slack calls are queued in `board_sync_log` and `slack_notify_log`
@@ -347,7 +347,7 @@ dotnet run --project src/Workstream.Api
 - [Deployment](./docs/deployment.md): production compose, PgBouncer, Caddy, backups
 - [Example audit orchestrator](./orchestrators/example/audit-orchestrator.md): a prompt that drives an audit plan end to end
 - [Roadmap](./docs/ROADMAP.md): planned work and good first issues
-- [Build specification](./workstream-mcp-spec.md): the full design
+- [Build specification](./docs/spec.md): the full design
 
 ## Status
 

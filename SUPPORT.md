@@ -6,7 +6,7 @@
   Include the commit or version, how you run it, and the failing tool call or request.
 - **A security problem.** Do not open an issue. Follow [SECURITY.md](./SECURITY.md).
 
-Before asking, check the [docs](./docs) and the [spec](./workstream-mcp-spec.md); most
+Before asking, check the [docs](./docs) and the [spec](./docs/spec.md); most
 behavior questions are answered there.
 
 Never paste an MCP URL: the token in it is a credential. Replace it with `<token>`.
