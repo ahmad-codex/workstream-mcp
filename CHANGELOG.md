@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Read-only web dashboard at `/<token>/ui/`: a board per plan with claim holders and TTL countdowns, dependencies, stuck work, an activity feed and a timeline per task. It is built from `ui/` (React and Vite) into the API and demo images.
+- `GET /<token>/api/...` read endpoints behind the dashboard. They reuse the MCP tools, never return claim tokens, and do not count against the MCP rate limit.
+- `scripts/simulate-agents.mjs`: two developer agents and a reviewer working a ten-task plan through the MCP endpoint.
+
 ### Changed
 
 - The design spec moved from the repo root to `docs/spec.md`.

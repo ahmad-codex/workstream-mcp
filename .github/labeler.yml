@@ -23,6 +23,9 @@
 "area: admin-cli":
   - changed-files:
       - any-glob-to-any-file: ["tools/**", "src/Workstream.Api/Endpoints/AdminEndpoints.cs"]
+"area: dashboard":
+  - changed-files:
+      - any-glob-to-any-file: ["ui/**", "src/Workstream.Api/Endpoints/DashboardEndpoints.cs"]
 tests:
   - changed-files:
       - any-glob-to-any-file: ["tests/**"]
