@@ -6,3 +6,5 @@
 .vs/
 .vscode/
 .idea/
+**/node_modules/
+src/Workstream.Api/wwwroot/ui/
