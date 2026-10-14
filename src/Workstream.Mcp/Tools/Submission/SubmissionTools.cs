@@ -498,7 +498,8 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
     public override string Description =>
         "Dev-plan: a reviewer's verdict on a task in review. decision ∈ {approved, changes_requested}. " +
         "On approved, the task moves to done and commit_hash (if provided) is recorded on the latest attempt. " +
-        "On changes_requested below retry cap, the task returns to in_progress for another developer pass; " +
+        "On changes_requested below retry cap, the task returns to pending so any developer can claim it for " +
+        "another pass; " +
         "at cap, it moves to needs_human_review.";
 
     protected override async Task<SubmitReviewDecisionOutput> RunAsync(SubmitReviewDecisionInput input, RequestContext ctx, CancellationToken ct)
@@ -514,7 +515,7 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
         var targetStatus = input.Decision switch
         {
             VerdictType.Approved         => TaskStatus.Done,
-            VerdictType.ChangesRequested => attemptCount >= pt.Row.RetryCap ? TaskStatus.NeedsHumanReview : TaskStatus.InProgress,
+            VerdictType.ChangesRequested => attemptCount >= pt.Row.RetryCap ? TaskStatus.NeedsHumanReview : TaskStatus.Pending,
             _ => throw new WorkstreamException(WorkstreamError.Validation($"unknown decision '{input.Decision}'")),
         };
 
@@ -549,7 +550,7 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
         var slackType = targetStatus switch
         {
             TaskStatus.Done       => "task.done",
-            TaskStatus.InProgress => "task.in_progress",
+            TaskStatus.Pending    => "task.in_progress",
             _ => "task.blocked",
         };
 

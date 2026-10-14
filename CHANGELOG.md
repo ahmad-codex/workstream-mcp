@@ -12,6 +12,10 @@ All notable changes to this project are recorded here. The format follows
 - `GET /<token>/api/...` read endpoints behind the dashboard. They reuse the MCP tools, never return claim tokens, and do not count against the MCP rate limit.
 - `scripts/simulate-agents.mjs`: two developer agents and a reviewer working a ten-task plan through the MCP endpoint.
 
+### Fixed
+
+- A development task sent back by a reviewer (`changes_requested`) returned to `in_progress` without a claim, so no developer could claim it again and its dependents stayed blocked (#70). It now returns to `pending`. Migration 0021 updates the `development` plan type and releases tasks already stuck this way.
+
 ### Changed
 
 - The design spec moved from the repo root to `docs/spec.md`.
