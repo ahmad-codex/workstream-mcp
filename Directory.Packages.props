@@ -8,7 +8,7 @@
     <!-- Hosting / ASP.NET Core (framework-shipped in .NET 10) -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.13" />
 
     <!-- MCP -->
     <PackageVersion Include="ModelContextProtocol" Version="0.4.0-preview.1" />
