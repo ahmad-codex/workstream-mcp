@@ -218,9 +218,9 @@ public sealed class StateMachineServiceTests : IClassFixture<PlanProfileFixture>
     }
 
     [Fact]
-    public void Dev_ChangesRequested_BelowCap_GoesBackToInProgress()
+    public void Dev_ChangesRequested_BelowCap_GoesBackToPending()
     {
-        var r = _svc.ValidateTransition(_fx.Development, EntityType.Task, "review", "in_progress", "submit_review_decision",
+        var r = _svc.ValidateTransition(_fx.Development, EntityType.Task, "review", "pending", "submit_review_decision",
             HumanActor(), "reviewer",
             new TransitionContext(Verdict: "changes_requested", AttemptCount: 1, RetryCap: 3));
         r.Allowed.Should().BeTrue();
@@ -236,9 +236,9 @@ public sealed class StateMachineServiceTests : IClassFixture<PlanProfileFixture>
     }
 
     [Fact]
-    public void Dev_ChangesRequested_AtCap_CannotGoBackToInProgress()
+    public void Dev_ChangesRequested_AtCap_CannotGoBackToPending()
     {
-        var r = _svc.ValidateTransition(_fx.Development, EntityType.Task, "review", "in_progress", "submit_review_decision",
+        var r = _svc.ValidateTransition(_fx.Development, EntityType.Task, "review", "pending", "submit_review_decision",
             HumanActor(), "reviewer",
             new TransitionContext(Verdict: "changes_requested", AttemptCount: 3, RetryCap: 3));
         r.Allowed.Should().BeFalse();

@@ -25,7 +25,7 @@
       { "from": "in_progress", "to": "review",      "via": "submit_attempt",    "requires_role": ["developer"] },
       { "from": "in_progress", "to": "pending",     "via": "release_claim" },
       { "from": "review",      "to": "done",        "via": "submit_review_decision", "verdict": "approved",          "requires_role": ["reviewer"] },
-      { "from": "review",      "to": "in_progress", "via": "submit_review_decision", "verdict": "changes_requested", "requires_role": ["reviewer"], "guard": "below_retry_cap" },
+      { "from": "review",      "to": "pending",     "via": "submit_review_decision", "verdict": "changes_requested", "requires_role": ["reviewer"], "guard": "below_retry_cap" },
       { "from": "review",      "to": "needs_human_review", "via": "submit_review_decision", "verdict": "changes_requested", "requires_role": ["reviewer"], "guard": "at_retry_cap" },
       { "from": "*",           "to": "blocked",     "via": "mark_blocked",      "requires_permission": "can_mark_needs_human_review" },
       { "from": "blocked",     "to": "in_progress", "via": "unblock" },
