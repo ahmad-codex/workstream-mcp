@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Added
 
 - Read-only web dashboard at `/<token>/ui/`: a board per plan with claim holders and TTL countdowns, dependencies, stuck work, an activity feed and a timeline per task. It is built from `ui/` (React and Vite) into the API and demo images.
@@ -112,7 +114,8 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.1...v0.1.2
