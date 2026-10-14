@@ -130,6 +130,7 @@ if (isDispatcher)
 // minimal-API would otherwise insert at the head of the pipeline.
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<TokenResolutionMiddleware>();
+app.UseStaticFiles();
 app.UseRouting();
 app.UseMiddleware<RateLimitMiddleware>();
 
@@ -138,6 +139,7 @@ app.MapMcp();
 app.MapProjectsWebhook();
 app.MapSlackInteractivity();
 app.MapAdmin();
+app.MapDashboard();
 
 await app.RunAsync().ConfigureAwait(false);
 return 0;

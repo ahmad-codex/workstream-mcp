@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Workstream.Api.Endpoints;
 using Workstream.Core.Domain;
 
 namespace Workstream.Api.Middleware;
@@ -21,6 +22,14 @@ public sealed class RateLimitMiddleware
 
     public async Task InvokeAsync(HttpContext ctx)
     {
+        // Dashboard reads poll every few seconds; they must not use up the actor's MCP budget.
+        var path = ctx.Request.Path;
+        if (path.StartsWithSegments("/api") || path.StartsWithSegments(DashboardEndpoints.UiPath))
+        {
+            await _next(ctx).ConfigureAwait(false);
+            return;
+        }
+
         if (ctx.Items.TryGetValue(TokenResolutionMiddleware.ContextKey, out var rc) && rc is RequestContext requestCtx)
         {
             var bucket = _buckets.GetOrAdd(requestCtx.ActorId, _ => new ActorBucket());
