@@ -10,13 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  # Updates the draft release from merged pull requests.
   draft:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@v7
+
+  # Labels pull requests from the autolabeler rules in .github/release-drafter.yml.
+  # pull_request_target so pull requests from forks get labels too; it never checks out PR code.
+  label:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
       pull-requests: write
     steps:
-      # On pull requests this only applies autolabeler labels; on master it updates the draft release.
-      - uses: release-drafter/release-drafter@v6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: release-drafter/release-drafter/autolabeler@v7
