@@ -44,3 +44,11 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build API image
+        run: docker build -f deploy/Dockerfile.api -t workstream-mcp:ci .
