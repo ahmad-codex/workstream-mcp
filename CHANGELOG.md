@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `export_plan` with `format: "json"` no longer returns claim tokens on tasks, findings or attempts (#71).
+
 ## [0.2.0] - 2026-10-14
 
 ### Added

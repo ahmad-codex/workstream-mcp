@@ -144,9 +144,9 @@ public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
             var payload = new
             {
                 plan,
-                tasks = tasks.Cast<object>().ToList(),
-                findings = findings.Cast<object>().ToList(),
-                attempts = attempts.Cast<object>().ToList(),
+                tasks = WithoutClaimTokens(tasks),
+                findings = WithoutClaimTokens(findings),
+                attempts = WithoutClaimTokens(attempts),
             };
             return new ExportPlanOutput("json", System.Text.Json.JsonSerializer.Serialize(payload));
         }
@@ -186,6 +186,15 @@ public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
         }
         return new ExportPlanOutput("markdown", sb.ToString());
     }
+
+    // A claim token proves a live claim, so it never leaves the server (same rule as get_finding).
+    private static List<Dictionary<string, object>> WithoutClaimTokens(IEnumerable<dynamic> rows) =>
+        rows.Select(r =>
+        {
+            var row = new Dictionary<string, object>((IDictionary<string, object>)r);
+            row.Remove("claim_token");
+            return row;
+        }).ToList();
 }
 
 // ============================================================================
