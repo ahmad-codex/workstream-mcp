@@ -6,9 +6,15 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-15
+
 ### Fixed
 
 - `export_plan` with `format: "json"` no longer returns claim tokens on tasks, findings or attempts (#71).
+
+### Changed
+
+- Dependency updates: Npgsql 10, Octokit 14, Vite 8 and TypeScript 7 for the dashboard, and newer GitHub Actions.
 
 ## [0.2.0] - 2026-10-14
 
@@ -118,7 +124,8 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.2...v0.1.3
