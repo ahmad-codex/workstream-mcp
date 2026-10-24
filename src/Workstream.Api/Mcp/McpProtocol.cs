@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,10 @@ namespace Workstream.Api.Mcp;
 public static class McpProtocol
 {
     public const string ProtocolVersion = "2025-06-18";
+
+    /// <summary>The release version from Directory.Build.props, without the source revision suffix.</summary>
+    public static readonly string ServerVersion = typeof(McpProtocol).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
 
     /// <summary>Error code returned by <c>tools/call</c> when the server has no database.</summary>
     public const string NotConfiguredCode = "not_configured";
@@ -47,7 +52,7 @@ public static class McpProtocol
             case "initialize":
                 return Result(req.Id, new InitializeResult(
                     ProtocolVersion: ProtocolVersion,
-                    ServerInfo: new ServerInfo("workstream-mcp", "0.1.0"),
+                    ServerInfo: new ServerInfo("workstream-mcp", ServerVersion),
                     Capabilities: new { tools = new { listChanged = false } }));
 
             case "tools/list":

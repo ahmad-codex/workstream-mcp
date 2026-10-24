@@ -113,6 +113,8 @@ public sealed class DemoAndStdioModeTests
             .Select(l => JsonDocument.Parse(l).RootElement).ToList();
         lines.Should().HaveCount(3, "the notification gets no response");
         lines[0].GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be(McpProtocol.ProtocolVersion);
+        var version = lines[0].GetProperty("result").GetProperty("serverInfo").GetProperty("version").GetString();
+        version.Should().MatchRegex(@"^\d+\.\d+\.\d+$").And.NotBe("1.0.0", "the version comes from Directory.Build.props");
         var listed = lines[1].GetProperty("result").GetProperty("tools")[0];
         listed.GetProperty("name").GetString().Should().Be("probe");
         var hints = listed.GetProperty("annotations");

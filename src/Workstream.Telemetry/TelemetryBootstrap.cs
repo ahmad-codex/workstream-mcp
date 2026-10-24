@@ -17,7 +17,7 @@ public static class TelemetryBootstrap
         services.AddSingleton<WorkstreamMetrics>();
 
         var resource = ResourceBuilder.CreateDefault()
-            .AddService(serviceName: "workstream-mcp", serviceVersion: "0.1.0");
+            .AddService(serviceName: "workstream-mcp", serviceVersion: WorkstreamMetrics.Version);
 
         services.AddOpenTelemetry()
             .WithMetrics(b =>

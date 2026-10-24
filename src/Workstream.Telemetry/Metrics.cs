@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Reflection;
 
 namespace Workstream.Telemetry;
 
@@ -10,7 +11,11 @@ public sealed class WorkstreamMetrics
 {
     public const string MeterName = "workstream";
 
-    public Meter Meter { get; } = new(MeterName, "0.1.0");
+    /// <summary>The release version from Directory.Build.props, without the source revision suffix.</summary>
+    public static readonly string Version = typeof(WorkstreamMetrics).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
+
+    public Meter Meter { get; } = new(MeterName, Version);
 
     public Histogram<double> ToolDurationSeconds        { get; }
     public Counter<long>     ClaimContentionNoWork      { get; }
