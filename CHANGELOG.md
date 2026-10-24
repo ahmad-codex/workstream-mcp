@@ -6,12 +6,19 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-24
+
 ### Added
 
 - MCP tool annotations on all 36 tools in `tools/list`. Reads (`list_*`, `get_*`, `export_plan`) are
   read-only; `mark_task_status`, `override_verdict`, `set_project_slack`, `archive_plan` and
   `cancel_audit` are destructive, so clients can ask before running them. Every tool must declare
   its hints.
+
+### Fixed
+
+- `initialize` reported `serverInfo.version` 0.1.0 since 0.2.0. The version now comes from
+  `Directory.Build.props`, and telemetry uses the same value.
 
 ## [0.2.1] - 2026-10-15
 
@@ -131,7 +138,8 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.3...v0.1.4
