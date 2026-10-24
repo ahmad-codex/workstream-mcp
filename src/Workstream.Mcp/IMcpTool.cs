@@ -14,19 +14,40 @@ namespace Workstream.Mcp;
 /// </summary>
 public interface IMcpTool
 {
-    string Name        { get; }
-    string Description { get; }
-    Type   InputType   { get; }
+    string    Name        { get; }
+    string    Description { get; }
+    Type      InputType   { get; }
+    ToolHints Hints       { get; }
 
     Task<ToolResult> ExecuteAsync(object input, RequestContext ctx, CancellationToken ct);
+}
+
+/// <summary>
+/// MCP tool annotations, so clients can tell a read from a change and confirm the risky ones.
+/// Every tool declares one; there is no default, so a new tool can't ship unlabelled.
+/// </summary>
+public sealed record ToolHints(bool ReadOnly, bool Destructive, bool Idempotent, bool OpenWorld = false)
+{
+    /// <summary>Reads state; safe to repeat.</summary>
+    public static readonly ToolHints Read = new(ReadOnly: true, Destructive: false, Idempotent: true);
+
+    /// <summary>Adds or advances work (a claim, a submission, a new row); repeating does it again.</summary>
+    public static readonly ToolHints Additive = new(ReadOnly: false, Destructive: false, Idempotent: false);
+
+    /// <summary>Moves an entity to a state; repeating with the same arguments changes nothing more.</summary>
+    public static readonly ToolHints Transition = new(ReadOnly: false, Destructive: false, Idempotent: true);
+
+    /// <summary>Replaces or discards state, or bypasses the normal flow.</summary>
+    public static readonly ToolHints Overwrite = new(ReadOnly: false, Destructive: true, Idempotent: true);
 }
 
 public abstract class McpTool<TInput, TOutput> : IMcpTool
     where TInput  : notnull
     where TOutput : notnull
 {
-    public abstract string Name        { get; }
-    public abstract string Description { get; }
+    public abstract string    Name        { get; }
+    public abstract string    Description { get; }
+    public abstract ToolHints Hints       { get; }
     public Type InputType => typeof(TInput);
 
     async Task<ToolResult> IMcpTool.ExecuteAsync(object input, RequestContext ctx, CancellationToken ct)

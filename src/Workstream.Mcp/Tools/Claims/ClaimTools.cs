@@ -70,6 +70,7 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
     }
 
     public override string Name => "claim_next_task";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Atomically claim the highest-priority pending task on a plan for the given role. The role " +
         "must be valid for the plan's plan_type (e.g. 'developer' for dev plans, 'auditor' for audit). " +
@@ -129,6 +130,7 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
     }
 
     public override string Name => "claim_specific_task";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Claim a specific task by id. Fails with task_unavailable if another actor holds it with an " +
         "unexpired claim. Use when the orchestrator is directing work (e.g. dispatching a subagent " +
@@ -193,6 +195,7 @@ public sealed class ClaimNextFindingForVerificationTool : McpTool<ClaimFindingIn
     }
 
     public override string Name => "claim_next_finding_for_verification";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Audit-plan-only: claim the highest-severity pending-verification finding on the plan. The " +
         "calling actor is implicitly assigned the 'verifier' role for the claim duration. Returns " +
@@ -229,6 +232,7 @@ public sealed class ClaimNextFindingForFixTool : McpTool<ClaimFindingInput, Clai
     }
 
     public override string Name => "claim_next_finding_for_fix";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Audit-plan-only: claim the highest-severity confirmed (or below-cap fix_failed/partial) " +
         "finding to fix. Caller is implicitly the 'fixer' for the claim. Sets the finding status " +
@@ -259,6 +263,7 @@ public sealed record NoOpOutput(string Message);
 public sealed class ClaimNextAttemptForReviewTool : McpTool<ClaimFindingInput, NoOpOutput>
 {
     public override string Name => "claim_next_attempt_for_review";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Reserved tool surface for the future fix-verifier / dev-reviewer queue. In v1 the verdict " +
         "tools (submit_attempt_verdict / submit_review_decision) accept the attempt id directly from " +
@@ -294,6 +299,7 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
     }
 
     public override string Name => "refresh_claim";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Extend an active claim's TTL without releasing it. Use when a subagent's reproduction is " +
         "taking longer than the configured role TTL (e.g. a verifier mid-deploy on a remote test host). " +
@@ -386,6 +392,7 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
     }
 
     public override string Name => "release_claim";
+    public override ToolHints Hints => ToolHints.Transition;
     public override string Description =>
         "Release a claim without submitting work. Used when an agent decides it cannot complete the " +
         "work and wants to surface it back to the pool. The task status reverts to pending, the " +

@@ -6,6 +6,13 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- MCP tool annotations on all 36 tools in `tools/list`. Reads (`list_*`, `get_*`, `export_plan`) are
+  read-only; `mark_task_status`, `override_verdict`, `set_project_slack`, `archive_plan` and
+  `cancel_audit` are destructive, so clients can ask before running them. Every tool must declare
+  its hints.
+
 ## [0.2.1] - 2026-10-15
 
 ### Fixed

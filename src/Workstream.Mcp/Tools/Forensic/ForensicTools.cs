@@ -26,6 +26,7 @@ public sealed class GetEventLogTool : McpTool<GetEventLogInput, GetEventLogOutpu
     public GetEventLogTool(IEventRepository events) => _events = events;
 
     public override string Name => "get_event_log";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "Forensic event log for a specific entity (task / finding / attempt / plan / phase). Used to " +
         "investigate 'why did this task end up in needs_human_review' — the events table records every " +
@@ -63,6 +64,7 @@ public sealed class GetStuckWorkTool : McpTool<GetStuckWorkInput, GetStuckWorkOu
     public GetStuckWorkTool(IDbConnectionFactory factory) => _factory = factory;
 
     public override string Name => "get_stuck_work";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "On-demand view of the same data the hourly stuck-work job computes: tasks past their TTL, " +
         "findings in pending_verification > 24h, attempts past TTL, plans with no events in the last " +
@@ -117,6 +119,7 @@ public sealed class ExportPlanTool : McpTool<ExportPlanInput, ExportPlanOutput>
     }
 
     public override string Name => "export_plan";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "Export a deterministic snapshot of a plan, suitable for committing to a repo or pasting into " +
         "chat. format ∈ {markdown, json}. Markdown is human-readable and stable; JSON is the full " +
@@ -230,6 +233,7 @@ public sealed class GetFindingTool : McpTool<GetFindingInput, GetFindingOutput>
     public GetFindingTool(IFindingRepository findings) => _findings = findings;
 
     public override string Name => "get_finding";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "Retrieve the full body of a single finding by id: severity, invariant impact, symptom, " +
         "root cause, reproduction steps, adversarial input, expected vs actual, reference comparison, " +

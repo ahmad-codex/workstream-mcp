@@ -38,6 +38,7 @@ public sealed class ListProjectsTool : McpTool<ListProjectsInput, ListProjectsOu
     }
 
     public override string Name => "list_projects";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "List every project the calling actor can see, with per-project active plan count and the " +
         "number of tasks/findings the actor currently has claimed across the project. Use this as " +
@@ -95,6 +96,7 @@ public sealed class ListPlansTool : McpTool<ListPlansInput, ListPlansOutput>
     public ListPlansTool(IPlanRepository plans) => _plans = plans;
 
     public override string Name => "list_plans";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "List plans on a project, optionally filtered by status. Each plan reports per-status task counts " +
         "so the caller can pick the next plan with workable work without making N additional dashboard calls.";
@@ -184,6 +186,7 @@ public sealed class GetPlanDashboardTool : McpTool<GetPlanDashboardInput, GetPla
     }
 
     public override string Name => "get_plan_dashboard";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "Comprehensive snapshot for one plan: per-status counts, per-phase counts, up to 5 next-claimable " +
         "tasks, the caller's currently-held claims, stuck work (claims older than 2× their TTL), and the " +
@@ -314,6 +317,7 @@ public sealed class GetMyActiveWorkTool : McpTool<GetMyActiveWorkInput, GetMyAct
     public GetMyActiveWorkTool(IDbConnectionFactory factory) => _factory = factory;
 
     public override string Name => "get_my_active_work";
+    public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "Every active claim the calling actor currently holds across every plan: tasks, findings, " +
         "and attempts in review. Use this on session start to recover claims after a Claude restart.";

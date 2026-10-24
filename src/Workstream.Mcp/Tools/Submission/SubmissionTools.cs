@@ -40,6 +40,7 @@ public sealed class StartWorkTool : McpTool<StartWorkInput, StartWorkOutput>
     }
 
     public override string Name => "start_work";
+    public override ToolHints Hints => ToolHints.Transition;
     public override string Description =>
         "Transition a claimed task from 'claimed' to 'in_progress'. Triggers the board sync to move " +
         "the card to In Progress. Requires the original claim token; a stale token yields stale_claim.";
@@ -102,6 +103,7 @@ public sealed class SubmitFindingsTool : McpTool<SubmitFindingsInput, SubmitFind
     }
 
     public override string Name => "submit_findings";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Audit-plan only: submit zero or more findings for the currently-claimed task. " +
         "If the findings list is empty, the task transitions directly to done (a clean audit). " +
@@ -174,6 +176,7 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
     }
 
     public override string Name => "submit_verification_verdict";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Audit-plan only: submit the verifier's verdict on a pending-verification finding. " +
         "verdict ∈ {confirmed, rejected, ambiguous}. Evidence (pre_output, post_output, etc.) is recorded " +
@@ -264,6 +267,7 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
     }
 
     public override string Name => "submit_attempt";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Submit a developer's (or fixer's) attempt at the work: list of files changed, approach summary, " +
         "side effects, build command, test scenario, diff reference. For dev-plan tasks this transitions " +
@@ -380,6 +384,7 @@ public sealed class SubmitAttemptVerdictTool : McpTool<SubmitAttemptVerdictInput
     }
 
     public override string Name => "submit_attempt_verdict";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Audit-plan: the fix-verifier's verdict on a fixer's attempt. verdict ∈ {fix_confirmed, " +
         "fix_failed, partial}. On fix_confirmed, commit_hash is required and the finding moves to fixed. " +
@@ -495,6 +500,7 @@ public sealed class SubmitReviewDecisionTool : McpTool<SubmitReviewDecisionInput
     }
 
     public override string Name => "submit_review_decision";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Dev-plan: a reviewer's verdict on a task in review. decision ∈ {approved, changes_requested}. " +
         "On approved, the task moves to done and commit_hash (if provided) is recorded on the latest attempt. " +
