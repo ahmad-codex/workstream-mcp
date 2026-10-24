@@ -113,7 +113,13 @@ public sealed class DemoAndStdioModeTests
             .Select(l => JsonDocument.Parse(l).RootElement).ToList();
         lines.Should().HaveCount(3, "the notification gets no response");
         lines[0].GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be(McpProtocol.ProtocolVersion);
-        lines[1].GetProperty("result").GetProperty("tools")[0].GetProperty("name").GetString().Should().Be("probe");
+        var listed = lines[1].GetProperty("result").GetProperty("tools")[0];
+        listed.GetProperty("name").GetString().Should().Be("probe");
+        var hints = listed.GetProperty("annotations");
+        hints.GetProperty("readOnlyHint").GetBoolean().Should().BeTrue();
+        hints.GetProperty("destructiveHint").GetBoolean().Should().BeFalse();
+        hints.GetProperty("idempotentHint").GetBoolean().Should().BeTrue();
+        hints.GetProperty("openWorldHint").GetBoolean().Should().BeFalse();
         var call = lines[2].GetProperty("result");
         call.GetProperty("isError").GetBoolean().Should().BeTrue();
         call.GetProperty("content")[0].GetProperty("text").GetString().Should().Contain(McpProtocol.NotConfiguredCode);
@@ -167,6 +173,7 @@ public sealed class DemoAndStdioModeTests
         public int Calls;
         public override string Name => "probe";
         public override string Description => "test tool";
+        public override ToolHints Hints => ToolHints.Read;
         protected override Task<object> RunAsync(ProbeInput input, RequestContext ctx, CancellationToken ct)
         {
             Interlocked.Increment(ref Calls);

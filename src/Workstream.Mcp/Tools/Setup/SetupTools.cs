@@ -32,6 +32,7 @@ public sealed class CreateProjectTool : McpTool<CreateProjectInput, CreateProjec
     private readonly IProjectRepository _repo;
     public CreateProjectTool(IProjectRepository repo) => _repo = repo;
     public override string Name => "create_project";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description => "Admin: create a new project. Slug is the stable identifier used in URLs and CLIs.";
 
     protected override async Task<CreateProjectOutput> RunAsync(CreateProjectInput input, RequestContext ctx, CancellationToken ct)
@@ -54,6 +55,7 @@ public sealed class AddProjectRepoTool : McpTool<AddProjectRepoInput, AddProject
     private readonly IProjectRepository _repo;
     public AddProjectRepoTool(IProjectRepository repo) => _repo = repo;
     public override string Name => "add_project_repo";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description => "Admin: attach a GitHub repo to a project. Reference-only repos are not modified by the system (e.g. an upstream project used as a design reference).";
 
     protected override async Task<AddProjectRepoOutput> RunAsync(AddProjectRepoInput input, RequestContext ctx, CancellationToken ct)
@@ -87,6 +89,7 @@ public sealed class AddProjectBoardTool : McpTool<AddProjectBoardInput, AddProje
     private readonly IProjectRepository _repo;
     public AddProjectBoardTool(IProjectRepository repo) => _repo = repo;
     public override string Name => "add_project_board";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Admin: register a GitHub Projects V2 board for a project. Caller must have already discovered " +
         "the Status field option ids via the GraphQL API (the discover endpoint helps).";
@@ -126,6 +129,7 @@ public sealed class SetProjectSlackTool : McpTool<SetProjectSlackInput, SetProje
     private readonly IProjectRepository _repo;
     public SetProjectSlackTool(IProjectRepository repo) => _repo = repo;
     public override string Name => "set_project_slack";
+    public override ToolHints Hints => ToolHints.Overwrite;
     public override string Description => "Admin: configure the Slack workspace, default channel, and bot-token secret reference for a project.";
 
     protected override async Task<SetProjectSlackOutput> RunAsync(SetProjectSlackInput input, RequestContext ctx, CancellationToken ct)
@@ -159,6 +163,7 @@ public sealed class CreatePlanTool : McpTool<CreatePlanInput, CreatePlanOutput>
         _repo = repo; _projects = projects; _outbox = outbox;
     }
     public override string Name => "create_plan";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Admin: create a new plan (in draft status). When primary_board_id is omitted the plan " +
         "inherits the project's board automatically if the project has exactly one registered " +
@@ -209,6 +214,7 @@ public sealed class AddPhaseTool : McpTool<AddPhaseInput, AddPhaseOutput>
     private readonly IPlanRepository _repo;
     public AddPhaseTool(IPlanRepository repo) => _repo = repo;
     public override string Name => "add_phase";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description => "Admin: add a phase to a plan. Phases are an optional structural layer; tasks may be unphased.";
 
     protected override async Task<AddPhaseOutput> RunAsync(AddPhaseInput input, RequestContext ctx, CancellationToken ct)
@@ -242,6 +248,7 @@ public sealed class ActivatePlanTool : McpTool<ActivatePlanInput, ActivatePlanOu
     }
 
     public override string Name => "activate_plan";
+    public override ToolHints Hints => ToolHints.Transition;
     public override string Description =>
         "Admin: move a plan from draft to active. Enqueues board-sync items for every task currently in the plan " +
         "and posts a plan.activated Slack notification.";
@@ -300,6 +307,7 @@ public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutpu
     }
 
     public override string Name => "archive_plan";
+    public override ToolHints Hints => ToolHints.Overwrite;
     public override string Description =>
         "Archive (disable) a plan so it stops accepting work. Requires can_archive_plan on the " +
         "calling actor. An archived plan is frozen: claim_next_task, claim_specific_task, the " +

@@ -35,6 +35,7 @@ public sealed class RequestAuditTool : McpTool<RequestAuditInput, RequestAuditOu
     }
 
     public override string Name => "request_audit";
+    public override ToolHints Hints => ToolHints.Additive with { OpenWorld = true };
     public override string Description =>
         "Admin: request a full audit run for one or more projects. Pass `projects` as a list " +
         "of project slugs or ids. Each is resolved and queued on the audit-dispatch outbox; a " +
@@ -100,6 +101,7 @@ public sealed class CancelAuditTool : McpTool<CancelAuditInput, CancelAuditOutpu
     }
 
     public override string Name => "cancel_audit";
+    public override ToolHints Hints => ToolHints.Overwrite;
     public override string Description =>
         "Admin: cancel a running audit for one or more projects. Pass `projects` as a list " +
         "of project slugs or ids. Each is resolved and a cancel request is queued on the " +

@@ -58,6 +58,13 @@ public static class McpProtocol
                         name = t.Name,
                         description = t.Description,
                         inputSchema = BuildInputSchema(t.InputType),
+                        annotations = new
+                        {
+                            readOnlyHint    = t.Hints.ReadOnly,
+                            destructiveHint = t.Hints.Destructive,
+                            idempotentHint  = t.Hints.Idempotent,
+                            openWorldHint   = t.Hints.OpenWorld,
+                        },
                     }).ToArray(),
                 });
 

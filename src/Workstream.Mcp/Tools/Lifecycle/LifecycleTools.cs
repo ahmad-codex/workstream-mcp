@@ -37,6 +37,7 @@ public sealed class MarkTaskStatusTool : McpTool<MarkTaskStatusInput, MarkTaskSt
     }
 
     public override string Name => "mark_task_status";
+    public override ToolHints Hints => ToolHints.Overwrite;
     public override string Description =>
         "Set a task to a non-normal status: deferred, blocked, skipped, out_of_scope, or " +
         "needs_human_review. Bypasses the claim mechanism (override path) and requires the relevant " +
@@ -110,6 +111,7 @@ public sealed class RecordCommitTool : McpTool<RecordCommitInput, RecordCommitOu
     }
 
     public override string Name => "record_commit";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Attach a commit hash to a task, finding, or attempt after the fact. Writes a commit_recorded " +
         "event. Use when the commit happens outside the normal submit_attempt flow (e.g. a hotfix " +
@@ -171,6 +173,7 @@ public sealed class CreateTaskTool : McpTool<CreateTaskInput, CreateTaskOutput>
     }
 
     public override string Name => "create_task";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Create a new task on a plan, in pending status. Optional 'depends_on' is a list of task ids " +
         "this new task depends on — claim_next_task and claim_specific_task both skip tasks whose " +
@@ -265,6 +268,7 @@ public sealed class CreateTasksTool : McpTool<CreateTasksInput, CreateTasksOutpu
     }
 
     public override string Name => "create_tasks";
+    public override ToolHints Hints => ToolHints.Additive;
     public override string Description =>
         "Bulk task creation for orchestrator bootstrap (e.g. Phase 0 of an audit). Accepts a list of " +
         "tasks on a single plan. Each item may carry 'depends_on_ids' (uuid list referencing tasks " +
@@ -384,6 +388,7 @@ public sealed class OverrideVerdictTool : McpTool<OverrideVerdictInput, Override
     }
 
     public override string Name => "override_verdict";
+    public override ToolHints Hints => ToolHints.Overwrite;
     public override string Description =>
         "Force a state change on a task or finding without holding its claim. Requires " +
         "can_override_verdict on the calling actor. Writes an override event with the supplied " +
