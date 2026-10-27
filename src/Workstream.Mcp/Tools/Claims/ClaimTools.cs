@@ -88,15 +88,17 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
 
-        var claimed = await _tasks.ClaimNextAsync(input.PlanId, ctx.ActorId, input.Role, ttl, ct).ConfigureAwait(false);
+        var claimed = await _tasks.ClaimNextAsync(input.PlanId, ctx.ActorId, input.Role, ttl, ct,
+            inTransaction: async task =>
+            {
+                if (plan.PrimaryBoardId is { } boardId)
+                {
+                    var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, task.Status);
+                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(false);
         if (claimed is null)
             throw new WorkstreamException(new WorkstreamError(ErrorCodes.NoWorkAvailable, "no claimable task on this plan"));
-
-        if (plan.PrimaryBoardId is { } boardId)
-        {
-            var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimed.Task.Status);
-            await _board.EnqueueAsync(claimed.Task.Id, boardId, column, claimed.Task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
-        }
 
         return new ClaimNextTaskOutput(
             claimed.ClaimToken,
@@ -148,7 +150,15 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
         var requested = input.TtlOverride is null ? (TimeSpan?)null : ClaimHelpers.ParseDuration(input.TtlOverride);
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
 
-        var claimed = await _tasks.ClaimSpecificAsync(input.TaskId, ctx.ActorId, input.Role, ttl, ct).ConfigureAwait(false);
+        var claimed = await _tasks.ClaimSpecificAsync(input.TaskId, ctx.ActorId, input.Role, ttl, ct,
+            inTransaction: async claimedTask =>
+            {
+                if (plan.PrimaryBoardId is { } boardId)
+                {
+                    var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimedTask.Status);
+                    await _board.EnqueueAsync(claimedTask.Id, boardId, column, claimedTask.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(false);
         if (claimed is null)
         {
             // Distinguish "blocked by unmet dependency" from "held by another actor" so the
@@ -162,12 +172,6 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
                     new Dictionary<string, object?> { ["unmet_dependencies"] = unmet }));
             }
             throw new WorkstreamException(new WorkstreamError(ErrorCodes.TaskUnavailable, "task is currently held by another actor"));
-        }
-
-        if (plan.PrimaryBoardId is { } boardId)
-        {
-            var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimed.Task.Status);
-            await _board.EnqueueAsync(claimed.Task.Id, boardId, column, claimed.Task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
         }
 
         return new ClaimNextTaskOutput(
@@ -402,25 +406,26 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
 
     protected override async Task<ReleaseClaimOutput> RunAsync(ReleaseClaimInput input, RequestContext ctx, CancellationToken ct)
     {
-        var task = await _tasks.ReleaseClaimAsync(input.ClaimToken, ctx.ActorId, input.Reason, resetStatusToPending: true, ct).ConfigureAwait(false);
-        if (task is not null)
-        {
-            // Move the card back to Backlog. Don't fire Slack — release_claim is normal
-            // claim churn and shouldn't generate channel noise.
-            var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
-            if (plan?.PrimaryBoardId is { } boardId)
+        var task = await _tasks.ReleaseClaimAsync(input.ClaimToken, ctx.ActorId, input.Reason, resetStatusToPending: true, ct,
+            inTransaction: async released =>
             {
-                var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
-                if (pt is not null)
+                // Move the card back to Backlog. Don't fire Slack — release_claim is normal
+                // claim churn and shouldn't generate channel noise.
+                var plan = await _plans.GetAsync(released.PlanId, ct).ConfigureAwait(false);
+                if (plan?.PrimaryBoardId is { } boardId)
                 {
-                    var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(pt.Value.Graph, task.Status);
-                    // Empty string = clear assignees on the bound card so the Backlog
-                    // doesn't show a phantom owner after the work returns to the pool.
-                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername: "", ct: ct).ConfigureAwait(false);
+                    var pt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
+                    if (pt is not null)
+                    {
+                        var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(pt.Value.Graph, released.Status);
+                        // Empty string = clear assignees on the bound card so the Backlog
+                        // doesn't show a phantom owner after the work returns to the pool.
+                        await _board.EnqueueAsync(released.Id, boardId, column, released.Status, assigneeGithubUsername: "", ct: ct).ConfigureAwait(false);
+                    }
                 }
-            }
+            }).ConfigureAwait(false);
+        if (task is not null)
             return new ReleaseClaimOutput(EntityType.Task, task.Id, task.Status);
-        }
 
         // Try finding/attempt — not yet implemented in their repos for release-only semantics.
         throw new WorkstreamException(WorkstreamError.StaleClaim());

@@ -225,9 +225,11 @@ public sealed class TaskRepository : ITaskRepository
     // -----------------------------------------------------------------------
 
     public async Task<ClaimedTask?> ClaimNextAsync(
-        Guid planId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default)
+        Guid planId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
         var sql = $"""
             WITH next AS (
                 SELECT id AS picked_id
@@ -259,18 +261,21 @@ public sealed class TaskRepository : ITaskRepository
             RETURNING {TaskColumns};
             """;
         var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
-            new { planId, actorId, role, ttlSeconds = (int)ttl.TotalSeconds }, cancellationToken: ct))
+            new { planId, actorId, role, ttlSeconds = (int)ttl.TotalSeconds }, tx, cancellationToken: ct))
             .ConfigureAwait(false);
         if (row is null) return null;
-        await EmitClaimedEventAsync(conn, row.Id, actorId, role, ct).ConfigureAwait(false);
+        await EmitClaimedEventAsync(conn, tx, row.Id, actorId, role, ct).ConfigureAwait(false);
         var task = row.ToDomain();
+        await CommitAsync(conn, tx, task, inTransaction, ct).ConfigureAwait(false);
         return new ClaimedTask(task, task.Claim.Token!.Value);
     }
 
     public async Task<ClaimedTask?> ClaimSpecificAsync(
-        Guid taskId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default)
+        Guid taskId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
         var sql = $"""
             WITH target AS (
                 SELECT id AS picked_id
@@ -300,18 +305,21 @@ public sealed class TaskRepository : ITaskRepository
             RETURNING {TaskColumns};
             """;
         var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
-            new { taskId, actorId, role, ttlSeconds = (int)ttl.TotalSeconds }, cancellationToken: ct))
+            new { taskId, actorId, role, ttlSeconds = (int)ttl.TotalSeconds }, tx, cancellationToken: ct))
             .ConfigureAwait(false);
         if (row is null) return null;
-        await EmitClaimedEventAsync(conn, row.Id, actorId, role, ct).ConfigureAwait(false);
+        await EmitClaimedEventAsync(conn, tx, row.Id, actorId, role, ct).ConfigureAwait(false);
         var task = row.ToDomain();
+        await CommitAsync(conn, tx, task, inTransaction, ct).ConfigureAwait(false);
         return new ClaimedTask(task, task.Claim.Token!.Value);
     }
 
     public async Task<WorkTask?> ReleaseClaimAsync(
-        Guid claimToken, Guid actorId, string? reason, bool resetStatusToPending, CancellationToken ct = default)
+        Guid claimToken, Guid actorId, string? reason, bool resetStatusToPending, CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
         var sql = $"""
             UPDATE tasks
             SET claim_actor_id = NULL,
@@ -324,14 +332,16 @@ public sealed class TaskRepository : ITaskRepository
             RETURNING {TaskColumns};
             """;
         var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
-            new { claimToken, reset = resetStatusToPending }, cancellationToken: ct))
+            new { claimToken, reset = resetStatusToPending }, tx, cancellationToken: ct))
             .ConfigureAwait(false);
         if (row is null) return null;
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
             VALUES (@actorId, 'task', @taskId, 'released', jsonb_build_object('reason', @reason))
-            """, new { actorId, taskId = row.Id, reason }, cancellationToken: ct)).ConfigureAwait(false);
-        return row.ToDomain();
+            """, new { actorId, taskId = row.Id, reason }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        var task = row.ToDomain();
+        await CommitAsync(conn, tx, task, inTransaction, ct).ConfigureAwait(false);
+        return task;
     }
 
     public async Task<WorkTask?> RefreshClaimAsync(
@@ -373,7 +383,8 @@ public sealed class TaskRepository : ITaskRepository
 
     public async Task<WorkTask?> UpdateStatusWithClaimAsync(
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
-        string eventType, string? eventPayloadJson, CancellationToken ct = default)
+        string eventType, string? eventPayloadJson, CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -424,8 +435,9 @@ public sealed class TaskRepository : ITaskRepository
             new { actorId, id = row.Id, eventType, fromState = row.Status, toState = newStatus, payload = eventPayloadJson },
             tx, cancellationToken: ct)).ConfigureAwait(false);
 
-        await tx.CommitAsync(ct).ConfigureAwait(false);
-        return updated.ToDomain();
+        var task = updated.ToDomain();
+        await CommitAsync(conn, tx, task, inTransaction, ct).ConfigureAwait(false);
+        return task;
     }
 
     public async Task<WorkTask?> OverrideStatusAsync(
@@ -517,12 +529,20 @@ public sealed class TaskRepository : ITaskRepository
 
     // ----- helpers -----
 
-    private static async Task EmitClaimedEventAsync(NpgsqlConnection conn, Guid taskId, Guid actorId, string role, CancellationToken ct)
+    private static async Task EmitClaimedEventAsync(NpgsqlConnection conn, NpgsqlTransaction tx, Guid taskId, Guid actorId, string role, CancellationToken ct)
     {
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO events (actor_id, entity_type, entity_id, event_type, to_state, payload)
             VALUES (@actorId, 'task', @taskId, 'claimed', 'claimed', jsonb_build_object('role', @role))
-            """, new { actorId, taskId, role }, cancellationToken: ct)).ConfigureAwait(false);
+            """, new { actorId, taskId, role }, tx, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    private static async Task CommitAsync(
+        NpgsqlConnection conn, NpgsqlTransaction tx, WorkTask task, Func<WorkTask, Task>? inTransaction, CancellationToken ct)
+    {
+        if (inTransaction is not null)
+            await OutboxTransaction.RunAsync(conn, tx, () => inTransaction(task)).ConfigureAwait(false);
+        await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task<WorkTask?> ReadOneAsync(NpgsqlConnection conn, string whereClause, object? parameters, CancellationToken ct)

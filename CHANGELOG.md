@@ -6,6 +6,16 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Board and Slack outbox rows from claim-gated changes (`claim_next_task`, `claim_specific_task`,
+  `release_claim`, `start_work`, `submit_findings`, `submit_attempt`, `submit_verification_verdict`)
+  were queued in a separate transaction after the change committed, so a crash in between could drop
+  the notification (#85). They now commit in the same transaction, and a stale claim queues nothing.
+  The claim and release writes and their events now share one transaction too.
+- `submit_attempt`, `submit_findings` and `submit_verification_verdict` refuse an expired claim token
+  with `stale_claim` up front, before recording the attempt, findings or verdict.
+
 ## [0.2.2] - 2026-10-24
 
 ### Added

@@ -223,4 +223,81 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
             statuses.Should().AllBeEquivalentTo("claimed");
         }
     }
+
+    [Fact]
+    public async Task StaleClaimer_ResumingAfterReclaim_QueuesNothingToTheOutbox()
+    {
+        var (planId, taskIds, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 2)
+            .ConfigureAwait(false);
+        var (oldOwner, newOwner) = (actorIds[0], actorIds[1]);
+        var boardId = await TestData.SeedBoardAsync(_pg.ConnectionFactory, planId).ConfigureAwait(false);
+        var outbox = new OutboxRepository(_pg.ConnectionFactory);
+        Func<string, Func<Workstream.Core.Domain.WorkTask, Task>> enqueueAs = owner =>
+            t => outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status, owner);
+
+        var stale = await _tasks.ClaimNextAsync(planId, oldOwner, "developer", TimeSpan.FromHours(1),
+            inTransaction: enqueueAs("old")).ConfigureAwait(false);
+        stale.Should().NotBeNull();
+
+        // The old owner goes quiet past its TTL and another agent takes the task.
+        await using (var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false))
+        {
+            await conn.ExecuteAsync(
+                "UPDATE tasks SET claimed_until = now() - interval '1 minute' WHERE id = @id",
+                new { id = taskIds[0] }).ConfigureAwait(false);
+        }
+        var fresh = await _tasks.ClaimNextAsync(planId, newOwner, "developer", TimeSpan.FromHours(1),
+            inTransaction: enqueueAs("new")).ConfigureAwait(false);
+        fresh.Should().NotBeNull();
+
+        // Both owners now try to move the task at the same time.
+        var callbackRanForOldOwner = false;
+        var results = await Task.WhenAll(
+            _tasks.UpdateStatusWithClaimAsync(stale!.ClaimToken, oldOwner, "in_progress", clearClaim: false,
+                eventType: "started_work", eventPayloadJson: null,
+                inTransaction: t => { callbackRanForOldOwner = true; return enqueueAs("old")(t); }),
+            _tasks.UpdateStatusWithClaimAsync(fresh!.ClaimToken, newOwner, "in_progress", clearClaim: false,
+                eventType: "started_work", eventPayloadJson: null,
+                inTransaction: enqueueAs("new"))).ConfigureAwait(false);
+
+        results[0].Should().BeNull("the old owner's token was replaced by the new claim");
+        results[1].Should().NotBeNull();
+        callbackRanForOldOwner.Should().BeFalse("a stale claim must never reach the outbox");
+
+        await using (var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false))
+        {
+            var rows = (await conn.QueryAsync<(string Owner, string Status)>("""
+                SELECT assignee_github_username, target_status FROM board_sync_log
+                WHERE task_id = @id ORDER BY id
+                """, new { id = taskIds[0] }).ConfigureAwait(false)).ToList();
+            rows.Should().Equal(("old", "claimed"), ("new", "claimed"), ("new", "in_progress"));
+        }
+    }
+
+    [Fact]
+    public async Task OutboxRow_RollsBackWithTheStateChange()
+    {
+        var (planId, taskIds, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 1)
+            .ConfigureAwait(false);
+        var boardId = await TestData.SeedBoardAsync(_pg.ConnectionFactory, planId).ConfigureAwait(false);
+        var outbox = new OutboxRepository(_pg.ConnectionFactory);
+        var claim = await _tasks.ClaimNextAsync(planId, actorIds[0], "developer", TimeSpan.FromHours(1)).ConfigureAwait(false);
+
+        var act = () => _tasks.UpdateStatusWithClaimAsync(claim!.ClaimToken, actorIds[0], "in_progress", clearClaim: false,
+            eventType: "started_work", eventPayloadJson: null,
+            inTransaction: async t =>
+            {
+                await outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status).ConfigureAwait(false);
+                throw new InvalidOperationException("crash after the outbox write");
+            });
+        await act.Should().ThrowAsync<InvalidOperationException>().ConfigureAwait(false);
+
+        await using var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false);
+        var status = await conn.ExecuteScalarAsync<string>(
+            "SELECT status FROM tasks WHERE id = @id", new { id = taskIds[0] }).ConfigureAwait(false);
+        var queued = await conn.ExecuteScalarAsync<long>(
+            "SELECT count(*) FROM board_sync_log WHERE task_id = @id", new { id = taskIds[0] }).ConfigureAwait(false);
+        status.Should().Be("claimed", "the state change rolled back");
+        queued.Should().Be(0, "the outbox row rolled back with it");
+    }
 }

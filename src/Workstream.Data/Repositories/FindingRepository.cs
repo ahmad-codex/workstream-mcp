@@ -207,7 +207,8 @@ public sealed class FindingRepository : IFindingRepository
 
     public async Task<Finding?> UpdateStatusWithClaimAsync(
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
-        string eventType, string? eventPayloadJson, CancellationToken ct = default)
+        string eventType, string? eventPayloadJson, CancellationToken ct = default,
+        Func<Finding, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -240,8 +241,11 @@ public sealed class FindingRepository : IFindingRepository
             new { actorId, id = row.Id, eventType, fromState = row.Status, toState = newStatus, payload = eventPayloadJson },
             tx, cancellationToken: ct)).ConfigureAwait(false);
 
+        var finding = updated.ToDomain();
+        if (inTransaction is not null)
+            await OutboxTransaction.RunAsync(conn, tx, () => inTransaction(finding)).ConfigureAwait(false);
         await tx.CommitAsync(ct).ConfigureAwait(false);
-        return updated.ToDomain();
+        return finding;
     }
 
     public async Task<Finding?> RefreshClaimAsync(

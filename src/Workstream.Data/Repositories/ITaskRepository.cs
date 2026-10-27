@@ -29,14 +29,16 @@ public interface ITaskRepository
     /// <summary>
     /// Atomically claim the next available task on the plan for the given role.
     /// Returns null if no claimable work exists. Implements the FOR UPDATE SKIP LOCKED
-    /// query in §6.1.
+    /// query in §6.1. <paramref name="inTransaction"/> runs before commit, inside
+    /// <see cref="OutboxTransaction"/>, so the outbox rows it writes commit with the claim.
     /// </summary>
     Task<ClaimedTask?> ClaimNextAsync(
         Guid planId,
         Guid actorId,
         string role,
         TimeSpan ttl,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null);
 
     /// <summary>
     /// Atomically claim a specific task by id. Fails (returns null) if the task is held by
@@ -47,7 +49,8 @@ public interface ITaskRepository
         Guid actorId,
         string role,
         TimeSpan ttl,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null);
 
     /// <summary>
     /// Release a claim. Returns the updated row (claim columns cleared, status possibly reset).
@@ -57,7 +60,8 @@ public interface ITaskRepository
         Guid actorId,
         string? reason,
         bool resetStatusToPending,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null);
 
     /// <summary>
     /// Extend an active claim's TTL. Returns the updated row with the new claimed_until,
@@ -74,6 +78,7 @@ public interface ITaskRepository
     /// <summary>
     /// Update the task status atomically gated on the claim token. Returns the updated row,
     /// or null if the claim token does not match (caller surfaces <c>stale_claim</c>).
+    /// <paramref name="inTransaction"/> runs only when the claim is live, before commit.
     /// </summary>
     Task<WorkTask?> UpdateStatusWithClaimAsync(
         Guid claimToken,
@@ -82,7 +87,8 @@ public interface ITaskRepository
         bool clearClaim,
         string eventType,
         string? eventPayloadJson,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Func<WorkTask, Task>? inTransaction = null);
 
     /// <summary>
     /// Override the status without holding a claim. Requires the caller to have already
