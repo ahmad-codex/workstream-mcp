@@ -28,6 +28,33 @@ internal static class ClaimHelpers
         return TimeSpan.FromMinutes(30);
     }
 
+    /// <summary>
+    /// Refresh limits for a role from <c>claim_limits</c> in the plan type's config, e.g.
+    /// <c>{"developer": {"max_lifetime": "12h", "refresh_requires_progress": true}}</c>.
+    /// Null when the role has none.
+    /// </summary>
+    public static Workstream.Data.ClaimRefreshLimits? ResolveLimits(string configJson, string role)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(configJson);
+            if (!doc.RootElement.TryGetProperty("claim_limits", out var all)
+                || all.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !all.TryGetProperty(role, out var el)
+                || el.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return null;
+            TimeSpan? max = el.TryGetProperty("max_lifetime", out var m) && m.ValueKind == System.Text.Json.JsonValueKind.String
+                ? ParseDuration(m.GetString() ?? "")
+                : null;
+            var progress = el.TryGetProperty("refresh_requires_progress", out var g) && g.ValueKind == System.Text.Json.JsonValueKind.True;
+            return max is null && !progress ? null : new Workstream.Data.ClaimRefreshLimits(max, progress);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static TimeSpan ParseDuration(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return TimeSpan.FromMinutes(30);
@@ -312,7 +339,10 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
         "must still be live AND held by the calling actor — an already-expired claim cannot be " +
         "reanimated here (it must release and re-claim), because the stuck-work sweeper may have " +
         "already handed the row to someone else. Writes a claim_refreshed event so the audit trail " +
-        "shows every extension.";
+        "shows every extension. A plan type can limit refreshes per role (claim_limits in its config): " +
+        "a max lifetime from claimed_at, and requiring progress (an attempt, findings, a commit or a " +
+        "status change) since the last refresh. A refused refresh returns claim_limit_reached with " +
+        "details.reason (max_lifetime or no_progress) and claimed_until, when the claim runs out.";
 
     protected override async Task<RefreshClaimOutput> RunAsync(RefreshClaimInput input, RequestContext ctx, CancellationToken ct)
     {
@@ -324,8 +354,11 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
         var task = await _tasks.GetByClaimTokenAsync(input.ClaimToken, ct).ConfigureAwait(false);
         if (task is not null)
         {
-            var ttl = requested ?? await ResolveTtlForTaskAsync(task, ct).ConfigureAwait(false);
-            var updated = await _tasks.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct).ConfigureAwait(false)
+            var pt = await PlanTypeForPlanAsync(task.PlanId, ct).ConfigureAwait(false);
+            var role = task.Claim.Role ?? "";
+            var ttl = requested ?? ClaimHelpers.ResolveTtl(pt?.RoleTtlsJson ?? "{}", role, requested: null);
+            var limits = ClaimHelpers.ResolveLimits(pt?.ConfigJson ?? "{}", role);
+            var updated = await _tasks.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct, limits).ConfigureAwait(false)
                           ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
             return new RefreshClaimOutput(EntityType.Task, updated.Id,
                 updated.Claim.ClaimedUntil ?? DateTimeOffset.UtcNow.Add(ttl));
@@ -335,8 +368,13 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
         var finding = await _findings.GetByClaimTokenAsync(input.ClaimToken, ct).ConfigureAwait(false);
         if (finding is not null)
         {
-            var ttl = requested ?? await ResolveTtlForFindingAsync(finding, ct).ConfigureAwait(false);
-            var updated = await _findings.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct).ConfigureAwait(false)
+            // Findings don't carry plan_id directly; resolve through the parent task.
+            var parent = await _tasks.GetAsync(finding.TaskId, ct).ConfigureAwait(false);
+            var pt = parent is null ? null : await PlanTypeForPlanAsync(parent.PlanId, ct).ConfigureAwait(false);
+            var role = finding.Claim.Role ?? "";
+            var ttl = requested ?? ClaimHelpers.ResolveTtl(pt?.RoleTtlsJson ?? "{}", role, requested: null);
+            var limits = ClaimHelpers.ResolveLimits(pt?.ConfigJson ?? "{}", role);
+            var updated = await _findings.RefreshClaimAsync(input.ClaimToken, ctx.ActorId, ttl, ct, limits).ConfigureAwait(false)
                           ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
             return new RefreshClaimOutput(EntityType.Finding, updated.Id,
                 updated.Claim.ClaimedUntil ?? DateTimeOffset.UtcNow.Add(ttl));
@@ -345,27 +383,12 @@ public sealed class RefreshClaimTool : McpTool<RefreshClaimInput, RefreshClaimOu
         throw new WorkstreamException(WorkstreamError.StaleClaim());
     }
 
-    private async Task<TimeSpan> ResolveTtlForTaskAsync(WorkTask task, CancellationToken ct)
+    private async Task<PlanType?> PlanTypeForPlanAsync(Guid planId, CancellationToken ct)
     {
-        var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
-        if (plan is null) return TimeSpan.FromMinutes(30);
+        var plan = await _plans.GetAsync(planId, ct).ConfigureAwait(false);
+        if (plan is null) return null;
         var ptOpt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
-        if (ptOpt is null) return TimeSpan.FromMinutes(30);
-        var role = task.Claim.Role ?? "";
-        return ClaimHelpers.ResolveTtl(ptOpt.Value.Row.RoleTtlsJson, role, requested: null);
-    }
-
-    private async Task<TimeSpan> ResolveTtlForFindingAsync(Finding finding, CancellationToken ct)
-    {
-        // Findings don't carry plan_id directly; resolve through the parent task.
-        var task = await _tasks.GetAsync(finding.TaskId, ct).ConfigureAwait(false);
-        if (task is null) return TimeSpan.FromMinutes(30);
-        var plan = await _plans.GetAsync(task.PlanId, ct).ConfigureAwait(false);
-        if (plan is null) return TimeSpan.FromMinutes(30);
-        var ptOpt = await _planTypes.GetAsync(plan.PlanTypeId, ct).ConfigureAwait(false);
-        if (ptOpt is null) return TimeSpan.FromMinutes(30);
-        var role = finding.Claim.Role ?? "";
-        return ClaimHelpers.ResolveTtl(ptOpt.Value.Row.RoleTtlsJson, role, requested: null);
+        return ptOpt?.Row;
     }
 }
 

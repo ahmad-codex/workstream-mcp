@@ -24,4 +24,5 @@ public static class ErrorCodes
     public const string DependenciesUnmet       = "dependencies_unmet";
     public const string DependencyCycle         = "dependency_cycle";
     public const string PlanArchived            = "plan_archived";
+    public const string ClaimLimitReached       = "claim_limit_reached";
 }

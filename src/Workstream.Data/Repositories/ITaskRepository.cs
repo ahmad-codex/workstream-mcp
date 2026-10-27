@@ -68,12 +68,15 @@ public interface ITaskRepository
     /// or null if the claim token is unknown or already expired (the caller surfaces
     /// <c>stale_claim</c> in either case so an expired claim can't be reanimated — the
     /// stuck-work sweeper owns that transition). Writes a <c>claim_refreshed</c> event.
+    /// <paramref name="limits"/> caps the extension at the role's max lifetime and can require
+    /// progress since the last refresh; a refused refresh throws <c>claim_limit_reached</c>.
     /// </summary>
     Task<WorkTask?> RefreshClaimAsync(
         Guid claimToken,
         Guid actorId,
         TimeSpan extendBy,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        ClaimRefreshLimits? limits = null);
 
     /// <summary>
     /// Update the task status atomically gated on the claim token. Returns the updated row,

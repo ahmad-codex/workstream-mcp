@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using FluentAssertions;
+using Workstream.Core.Errors;
+using Workstream.Data;
 using Workstream.Data.Repositories;
 using Xunit;
 
@@ -299,5 +301,63 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
             "SELECT count(*) FROM board_sync_log WHERE task_id = @id", new { id = taskIds[0] }).ConfigureAwait(false);
         status.Should().Be("claimed", "the state change rolled back");
         queued.Should().Be(0, "the outbox row rolled back with it");
+    }
+    [Fact]
+    public async Task RefreshLoop_WithoutProgress_IsRefused_UntilTheHolderRecordsProgress()
+    {
+        var (planId, _, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 1)
+            .ConfigureAwait(false);
+        var limits = new ClaimRefreshLimits(MaxLifetime: null, RequireProgress: true);
+        var claim = await _tasks.ClaimNextAsync(planId, actorIds[0], "developer", TimeSpan.FromHours(1)).ConfigureAwait(false);
+
+        var refresh = () => _tasks.RefreshClaimAsync(claim!.ClaimToken, actorIds[0], TimeSpan.FromHours(1), limits: limits);
+        (await refresh.Should().ThrowAsync<WorkstreamException>().ConfigureAwait(false))
+            .Which.Error.Details!["reason"].Should().Be("no_progress");
+
+        await _tasks.UpdateStatusWithClaimAsync(claim!.ClaimToken, actorIds[0], "in_progress", clearClaim: false,
+            eventType: "started_work", eventPayloadJson: null).ConfigureAwait(false);
+        (await refresh().ConfigureAwait(false)).Should().NotBeNull("starting work is progress");
+
+        (await refresh.Should().ThrowAsync<WorkstreamException>().ConfigureAwait(false))
+            .Which.Error.Code.Should().Be(ErrorCodes.ClaimLimitReached, "nothing happened since the last refresh");
+    }
+
+    [Fact]
+    public async Task Refresh_IsCappedAtMaxLifetime_ThenRefused()
+    {
+        var (planId, _, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 1)
+            .ConfigureAwait(false);
+        var limits = new ClaimRefreshLimits(MaxLifetime: TimeSpan.FromMinutes(90), RequireProgress: false);
+        var claim = await _tasks.ClaimNextAsync(planId, actorIds[0], "developer", TimeSpan.FromHours(1)).ConfigureAwait(false);
+
+        var refreshed = await _tasks.RefreshClaimAsync(claim!.ClaimToken, actorIds[0], TimeSpan.FromHours(2), limits: limits)
+            .ConfigureAwait(false);
+        refreshed!.Claim.ClaimedUntil.Should().Be(refreshed.Claim.ClaimedAt!.Value.AddMinutes(90));
+
+        var again = () => _tasks.RefreshClaimAsync(claim.ClaimToken, actorIds[0], TimeSpan.FromHours(1), limits: limits);
+        (await again.Should().ThrowAsync<WorkstreamException>().ConfigureAwait(false))
+            .Which.Error.Details!["reason"].Should().Be("max_lifetime");
+    }
+
+    [Fact]
+    public async Task Refresh_WithoutLimits_KeepsExtending()
+    {
+        var (planId, _, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 1)
+            .ConfigureAwait(false);
+        var claim = await _tasks.ClaimNextAsync(planId, actorIds[0], "developer", TimeSpan.FromHours(1)).ConfigureAwait(false);
+        for (var i = 0; i < 3; i++)
+            (await _tasks.RefreshClaimAsync(claim!.ClaimToken, actorIds[0], TimeSpan.FromHours(1)).ConfigureAwait(false))
+                .Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task MaxLifetimeDurations_ParseAsPostgresIntervals()
+    {
+        await using var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false);
+        var seconds = await conn.QuerySingleAsync<(double S, double M, double H, double D)>("""
+            SELECT extract(epoch FROM '45s'::interval), extract(epoch FROM '30m'::interval),
+                   extract(epoch FROM '12h'::interval), extract(epoch FROM '2d'::interval)
+            """).ConfigureAwait(false);
+        seconds.Should().Be((45d, 1800d, 43200d, 172800d), "get_stuck_work casts max_lifetime with ::interval");
     }
 }

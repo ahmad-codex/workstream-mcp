@@ -345,7 +345,8 @@ public sealed class TaskRepository : ITaskRepository
     }
 
     public async Task<WorkTask?> RefreshClaimAsync(
-        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default)
+        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default,
+        ClaimRefreshLimits? limits = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -355,22 +356,30 @@ public sealed class TaskRepository : ITaskRepository
         // (claimed_until > now()). An already-expired claim is NOT eligible — it must
         // go through release_claim and re-claim, otherwise an agent that lost the race
         // to the sweeper could revive a row that another claimer has since taken.
-        var sql = $"""
-            UPDATE tasks
-            SET claimed_until = now() + (@extendSeconds || ' seconds')::interval
+        var current = await conn.QuerySingleOrDefaultAsync<(Guid Id, DateTimeOffset ClaimedAt, DateTimeOffset ClaimedUntil)>(new CommandDefinition("""
+            SELECT id, claimed_at, claimed_until FROM tasks
             WHERE claim_token   = @claimToken
               AND claim_actor_id = @actorId
               AND claimed_until > now()
-            RETURNING {TaskColumns};
-            """;
-        var row = await conn.QuerySingleOrDefaultAsync<TaskRow>(new CommandDefinition(sql,
-            new { claimToken, actorId, extendSeconds = (int)extendBy.TotalSeconds }, tx, cancellationToken: ct))
-            .ConfigureAwait(false);
-        if (row is null)
+            FOR UPDATE
+            """, new { claimToken, actorId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (current.Id == Guid.Empty)
         {
             await tx.RollbackAsync(ct).ConfigureAwait(false);
             return null;
         }
+        var cap = await ClaimRefreshGate.CheckAsync(conn, tx, "task", current.Id, actorId,
+            current.ClaimedAt, current.ClaimedUntil, limits, ct).ConfigureAwait(false);
+
+        var sql = $"""
+            UPDATE tasks
+            SET claimed_until = LEAST(now() + (@extendSeconds || ' seconds')::interval, COALESCE(@cap, 'infinity'))
+            WHERE id = @id
+            RETURNING {TaskColumns}
+            """;
+        var row = await conn.QuerySingleAsync<TaskRow>(new CommandDefinition(sql,
+            new { id = current.Id, extendSeconds = (int)extendBy.TotalSeconds, cap }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
             VALUES (@actorId, 'task', @taskId, 'claim_refreshed',

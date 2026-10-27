@@ -6,6 +6,15 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Optional refresh limits per role in a plan type's config (`claim_limits`): `max_lifetime` caps
+  how long `refresh_claim` can keep a claim alive, and `refresh_requires_progress` refuses a refresh
+  when the holder recorded nothing since the claim or the last refresh. A refused refresh returns
+  `claim_limit_reached` and the claim runs out on its TTL, so an agent stuck in a loop can't hold a
+  task forever (#87). `get_stuck_work` lists claims held past `max_lifetime`. Without config,
+  nothing changes.
+
 ## [0.2.3] - 2026-10-27
 
 ### Fixed
