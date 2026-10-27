@@ -67,7 +67,7 @@ public sealed class GetStuckWorkTool : McpTool<GetStuckWorkInput, GetStuckWorkOu
     public override ToolHints Hints => ToolHints.Read;
     public override string Description =>
         "On-demand view of the same data the hourly stuck-work job computes: tasks past their TTL, " +
-        "findings in pending_verification > 24h, attempts past TTL, plans with no events in the last " +
+        "claims held past their role's max_lifetime, findings in pending_verification > 24h, attempts past TTL, plans with no events in the last " +
         "24h. Scoped to a single plan or global.";
 
     protected override async Task<GetStuckWorkOutput> RunAsync(GetStuckWorkInput input, RequestContext ctx, CancellationToken ct)
@@ -84,6 +84,16 @@ public sealed class GetStuckWorkTool : McpTool<GetStuckWorkInput, GetStuckWorkOu
             WHERE (@planId IS NULL OR t.plan_id = @planId)
               AND t.claim_token IS NOT NULL
               AND t.claimed_until < now() - interval '15 minutes'
+            UNION ALL
+            SELECT 'task', t.id, t.status, t.claimed_at,
+                   (SELECT github_username FROM users u WHERE u.id = t.claim_actor_id),
+                   'claim held past max_lifetime'
+            FROM tasks t
+            JOIN plans p ON p.id = t.plan_id
+            JOIN plan_types pt ON pt.id = p.plan_type_id
+            WHERE (@planId IS NULL OR t.plan_id = @planId)
+              AND t.claimed_until > now()
+              AND t.claimed_at + (pt.config -> 'claim_limits' -> t.claim_role ->> 'max_lifetime')::interval < now()
             UNION ALL
             SELECT 'finding', f.id, f.status, f.updated_at,
                    (SELECT github_username FROM users u WHERE u.id = f.claim_actor_id),

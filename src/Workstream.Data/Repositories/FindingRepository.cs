@@ -249,29 +249,38 @@ public sealed class FindingRepository : IFindingRepository
     }
 
     public async Task<Finding?> RefreshClaimAsync(
-        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default)
+        Guid claimToken, Guid actorId, TimeSpan extendBy, CancellationToken ct = default,
+        ClaimRefreshLimits? limits = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
 
         // Same liveness gate as the task path: must match token + holding actor + still
         // be live. Expired claims fall through to release_claim + re-claim.
-        var sql = $"""
-            UPDATE findings
-            SET claimed_until = now() + (@extendSeconds || ' seconds')::interval
+        var current = await conn.QuerySingleOrDefaultAsync<(Guid Id, DateTimeOffset ClaimedAt, DateTimeOffset ClaimedUntil)>(new CommandDefinition("""
+            SELECT id, claimed_at, claimed_until FROM findings
             WHERE claim_token   = @claimToken
               AND claim_actor_id = @actorId
               AND claimed_until > now()
-            RETURNING {Columns}
-            """;
-        var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql,
-            new { claimToken, actorId, extendSeconds = (int)extendBy.TotalSeconds }, tx, cancellationToken: ct))
-            .ConfigureAwait(false);
-        if (row is null)
+            FOR UPDATE
+            """, new { claimToken, actorId }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (current.Id == Guid.Empty)
         {
             await tx.RollbackAsync(ct).ConfigureAwait(false);
             return null;
         }
+        var cap = await ClaimRefreshGate.CheckAsync(conn, tx, "finding", current.Id, actorId,
+            current.ClaimedAt, current.ClaimedUntil, limits, ct).ConfigureAwait(false);
+
+        var sql = $"""
+            UPDATE findings
+            SET claimed_until = LEAST(now() + (@extendSeconds || ' seconds')::interval, COALESCE(@cap, 'infinity'))
+            WHERE id = @id
+            RETURNING {Columns}
+            """;
+        var row = await conn.QuerySingleAsync<Row>(new CommandDefinition(sql,
+            new { id = current.Id, extendSeconds = (int)extendBy.TotalSeconds, cap }, tx, cancellationToken: ct))
+            .ConfigureAwait(false);
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO events (actor_id, entity_type, entity_id, event_type, payload)
             VALUES (@actorId, 'finding', @id, 'claim_refreshed',

@@ -25,6 +25,23 @@ The wire protocol is JSON-RPC 2.0, over HTTP POST to `/<token>/mcp` or over stdi
 | `refresh_claim` | Extend a live claim's TTL without releasing it (`extend_by`, e.g. `30m`) |
 | `release_claim` | Surface work back to the pool without submitting |
 
+A plan type can limit refreshes per role with `claim_limits` in its `config`:
+
+```json
+"claim_limits": {
+  "developer": { "max_lifetime": "12h", "refresh_requires_progress": true }
+}
+```
+
+- `max_lifetime`: a refresh never extends a claim past `claimed_at` plus this duration.
+- `refresh_requires_progress`: a refresh only extends the claim if the holder recorded progress
+  (a status change, an attempt, findings or a commit) since the claim or the last refresh.
+
+A refused refresh returns `claim_limit_reached` with `details.reason` (`max_lifetime` or
+`no_progress`) and `claimed_until`. The claim is not touched, so it runs out on its current TTL.
+Without `claim_limits` a refresh always extends. `get_stuck_work` also lists claims held past
+`max_lifetime`.
+
 ## Work submission (§9.3)
 
 | Tool | Purpose |

@@ -55,7 +55,8 @@ public interface IFindingRepository
         Guid claimToken,
         Guid actorId,
         TimeSpan extendBy,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        ClaimRefreshLimits? limits = null);
 
     /// <summary>
     /// Override the finding status without holding a claim. Caller must have already
