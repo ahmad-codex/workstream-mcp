@@ -66,12 +66,11 @@ public sealed class StartWorkTool : McpTool<StartWorkInput, StartWorkOutput>
 
         var updated = await _tasks.UpdateStatusWithClaimAsync(
             input.ClaimToken, ctx.ActorId, TaskStatus.InProgress, clearClaim: false,
-            eventType: "started_work", eventPayloadJson: null, ct).ConfigureAwait(false)
+            eventType: "started_work", eventPayloadJson: null, ct,
+            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(
+                _boardSync, _slack, _plans, plan, pt, t, "task.in_progress", ctx, ct,
+                assigneeGithubUsername: ctx.GithubUsername, notifySlack: true)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
-
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(
-            _boardSync, _slack, _plans, plan, pt, updated, "task.in_progress", ctx, ct,
-            assigneeGithubUsername: ctx.GithubUsername, notifySlack: true).ConfigureAwait(false);
 
         return new StartWorkOutput(updated.Id, updated.Status);
     }
@@ -131,19 +130,18 @@ public sealed class SubmitFindingsTool : McpTool<SubmitFindingsInput, SubmitFind
         var inserted = await _findings.InsertManyAsync(task.Id, input.Findings, ct).ConfigureAwait(false);
 
         var clearClaim = targetStatus == TaskStatus.Done;
-        var updated = await _tasks.UpdateStatusWithClaimAsync(
-            input.ClaimToken, ctx.ActorId, targetStatus, clearClaim,
-            eventType: "findings_submitted",
-            eventPayloadJson: JsonSerializer.Serialize(new { count = input.Findings.Count }), ct).ConfigureAwait(false)
-                      ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
-
         var findingsExtras = new Dictionary<string, string>
         {
             ["finding_count"] = input.Findings.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated,
-            updated.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct,
-            extraTokens: findingsExtras, notifySlack: true).ConfigureAwait(false);
+        var updated = await _tasks.UpdateStatusWithClaimAsync(
+            input.ClaimToken, ctx.ActorId, targetStatus, clearClaim,
+            eventType: "findings_submitted",
+            eventPayloadJson: JsonSerializer.Serialize(new { count = input.Findings.Count }), ct,
+            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t,
+                t.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct,
+                extraTokens: findingsExtras, notifySlack: true)).ConfigureAwait(false)
+                      ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         return new SubmitFindingsOutput(updated.Status, inserted.Select(f => f.Id).ToList());
     }
@@ -212,13 +210,6 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
 
         var verdict = await _verdicts.InsertForFindingAsync(finding.Id, ctx.ActorId, input.Verdict, input.Evidence, ct).ConfigureAwait(false);
 
-        var updated = await _findings.UpdateStatusWithClaimAsync(
-            input.ClaimToken, ctx.ActorId, targetStatus, clearClaim: true,
-            eventType: "verdict_submitted",
-            eventPayloadJson: JsonSerializer.Serialize(new { verdict = input.Verdict, verdict_id = verdict.Id }),
-            ct).ConfigureAwait(false)
-                      ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
-
         // One notification type per verdict — an ambiguous verdict is no longer
         // mislabelled "rejected". The verifier's reason_category surfaces as {reason}.
         var verdictSlackType = input.Verdict switch
@@ -231,10 +222,20 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
         var verdictExtras = new Dictionary<string, string>();
         var verdictReason = NotificationHelpers.HumanizeReason(input.Evidence?.ReasonCategory);
         if (verdictReason is not null) verdictExtras["reason"] = verdictReason;
-        await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt, updated, task.Id,
-            verdictSlackType, ctx, ct, verdictExtras.Count > 0 ? verdictExtras : null).ConfigureAwait(false);
-        // Refresh the parent task card so the audit ledger reflects this verdict.
-        await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
+
+        var updated = await _findings.UpdateStatusWithClaimAsync(
+            input.ClaimToken, ctx.ActorId, targetStatus, clearClaim: true,
+            eventType: "verdict_submitted",
+            eventPayloadJson: JsonSerializer.Serialize(new { verdict = input.Verdict, verdict_id = verdict.Id }),
+            ct,
+            inTransaction: async f =>
+            {
+                await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt, f, task.Id,
+                    verdictSlackType, ctx, ct, verdictExtras.Count > 0 ? verdictExtras : null).ConfigureAwait(false);
+                // Refresh the parent task card so the audit ledger reflects this verdict.
+                await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
+            }).ConfigureAwait(false)
+                      ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         return new SubmitVerificationVerdictOutput(updated.Id, updated.Status, verdict.Id);
     }
@@ -314,10 +315,9 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             input.ClaimToken, ctx.ActorId, TaskStatus.Review, clearClaim: true,
             eventType: "attempt_submitted",
             eventPayloadJson: JsonSerializer.Serialize(new { attempt_id = attempt.Id, attempt_number = attempt.AttemptNumber }),
-            ct).ConfigureAwait(false)
+            ct,
+            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t, "task.review", ctx, ct, notifySlack: true)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
-
-        await NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, updated, "task.review", ctx, ct, notifySlack: true).ConfigureAwait(false);
 
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
     }
@@ -343,10 +343,10 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             input.ClaimToken, ctx.ActorId, FindingStatus.InFix, clearClaim: true,
             eventType: "attempt_submitted",
             eventPayloadJson: JsonSerializer.Serialize(new { attempt_id = attempt.Id, attempt_number = attempt.AttemptNumber }),
-            ct).ConfigureAwait(false)
+            ct,
+            // Refresh the parent task card so the audit ledger shows the fix attempt.
+            inTransaction: _ => NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
-        // Refresh the parent task card so the audit ledger shows the fix attempt.
-        await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
     }
 }
@@ -602,7 +602,7 @@ internal static class TaskRepoHelpers
                    claim_actor_id AS ClaimActorId, claim_role AS ClaimRole, claim_token AS ClaimToken,
                    claimed_at AS ClaimedAt, claimed_until AS ClaimedUntil,
                    created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM tasks WHERE claim_token = @claimToken
+            FROM tasks WHERE claim_token = @claimToken AND claimed_until > now()
             """;
         var row = await Dapper.SqlMapper.QuerySingleOrDefaultAsync<TaskRowSnapshot>(
             conn, new Dapper.CommandDefinition(sql, new { claimToken }, cancellationToken: ct)).ConfigureAwait(false);
@@ -659,7 +659,7 @@ internal static class FindingRepoHelpers
                    claim_actor_id AS ClaimActorId, claim_role AS ClaimRole, claim_token AS ClaimToken,
                    claimed_at AS ClaimedAt, claimed_until AS ClaimedUntil,
                    created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM findings WHERE claim_token = @claimToken
+            FROM findings WHERE claim_token = @claimToken AND claimed_until > now()
             """;
         var row = await Dapper.SqlMapper.QuerySingleOrDefaultAsync<FindingRowSnapshot>(
             conn, new Dapper.CommandDefinition(sql, new { claimToken }, cancellationToken: ct)).ConfigureAwait(false);

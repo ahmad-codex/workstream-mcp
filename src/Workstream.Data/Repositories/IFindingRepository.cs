@@ -43,7 +43,8 @@ public interface IFindingRepository
     Task<Finding?> UpdateStatusWithClaimAsync(
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
         string eventType, string? eventPayloadJson,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Func<Finding, Task>? inTransaction = null);
 
     /// <summary>
     /// Extend an active claim's TTL on a finding. Returns the updated row with the new

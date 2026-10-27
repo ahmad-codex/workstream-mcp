@@ -14,14 +14,21 @@ public sealed class OutboxRepository : IOutboxRepository
 
     // ------- Board sync outbox -------
 
-    public async Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default)
-    {
-        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
-        return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+    public Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default)
+        => InsertAsync("""
             INSERT INTO board_sync_log (task_id, board_id, target_column, target_status, assignee_github_username)
             VALUES (@taskId, @boardId, @targetColumn, @targetStatus, @assigneeGithubUsername)
             RETURNING id
-            """, new { taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername }, cancellationToken: ct)).ConfigureAwait(false);
+            """, new { taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername }, ct);
+
+    // Enqueues join the claim-gated transaction when one is in flight (see OutboxTransaction),
+    // and run on their own connection otherwise.
+    private async Task<long> InsertAsync(string sql, object parameters, CancellationToken ct)
+    {
+        if (OutboxTransaction.Current is { } scope)
+            return await scope.Connection.ExecuteScalarAsync<long>(new CommandDefinition(sql, parameters, scope.Transaction, cancellationToken: ct)).ConfigureAwait(false);
+        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        return await conn.ExecuteScalarAsync<long>(new CommandDefinition(sql, parameters, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<BoardSyncRow>> ClaimBoardSyncBatchAsync(int batchSize, CancellationToken ct = default)
@@ -89,10 +96,8 @@ public sealed class OutboxRepository : IOutboxRepository
 
     // ------- Slack outbox -------
 
-    public async Task<long> EnqueueSlackAsync(SlackNotifyRow row, CancellationToken ct = default)
-    {
-        await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
-        return await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+    public Task<long> EnqueueSlackAsync(SlackNotifyRow row, CancellationToken ct = default)
+        => InsertAsync("""
             INSERT INTO slack_notify_log (
                 event_id, project_id, plan_id, entity_type, entity_id, channel_id, notification_type, body, blocks_json, color,
                 author_name, author_icon, author_link, thread_ts
@@ -100,8 +105,7 @@ public sealed class OutboxRepository : IOutboxRepository
             VALUES (@EventId, @ProjectId, @PlanId, @EntityType, @EntityId, @ChannelId, @NotificationType, @Body, @BlocksJson, @Color,
                 @AuthorName, @AuthorIcon, @AuthorLink, @ThreadTs)
             RETURNING id
-            """, row, cancellationToken: ct)).ConfigureAwait(false);
-    }
+            """, row, ct);
 
     public async Task<IReadOnlyList<SlackNotifyRow>> ClaimSlackBatchAsync(int batchSize, CancellationToken ct = default)
     {

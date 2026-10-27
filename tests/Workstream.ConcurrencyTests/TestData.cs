@@ -69,4 +69,19 @@ public static class TestData
 
         return (planId, taskIds, actorIds);
     }
+
+    /// <summary>A Project V2 board on the plan's project, so board-sync outbox rows can reference it.</summary>
+    public static async Task<Guid> SeedBoardAsync(IDbConnectionFactory factory, Guid planId)
+    {
+        await using var conn = await factory.OpenAsync().ConfigureAwait(false);
+        var boardId = Guid.NewGuid();
+        await conn.ExecuteAsync("""
+            INSERT INTO project_boards (id, project_id, github_project_v2_node_id, github_project_number, github_owner,
+                display_name, status_field_node_id, status_option_backlog, status_option_in_progress,
+                status_option_review, status_option_done)
+            SELECT @id, project_id, @node, 1, 'test', 'Test Board', 'field', 'b', 'i', 'r', 'd'
+            FROM plans WHERE id = @planId
+            """, new { id = boardId, node = $"PVT_{boardId:N}", planId }).ConfigureAwait(false);
+        return boardId;
+    }
 }
