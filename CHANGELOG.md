@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-27
+
 ### Fixed
 
 - Board and Slack outbox rows from claim-gated changes (`claim_next_task`, `claim_specific_task`,
@@ -148,7 +150,8 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.1.4...v0.2.0
