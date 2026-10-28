@@ -213,21 +213,21 @@ public sealed class ArchivePlanToolTests : IClassFixture<PostgresFixture>
     {
         public Task EnqueueForTaskAsync(Plan plan, (PlanType Row, StateGraph Graph) planType, WorkTask task,
             string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null,
-            CancellationToken ct = default) => Task.CompletedTask;
+            IOutboxScope? scope = null, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) planType, Finding finding,
             Guid taskId, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null,
-            CancellationToken ct = default) => Task.CompletedTask;
+            IOutboxScope? scope = null, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) planType,
             string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null,
-            CancellationToken ct = default) => Task.CompletedTask;
+            IOutboxScope? scope = null, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class NullBoardSync : IBoardSyncEnqueue
     {
         public Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus,
-            string? assigneeGithubUsername = null, CancellationToken ct = default) => Task.CompletedTask;
+            string? assigneeGithubUsername = null, IOutboxScope? scope = null, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class NullPlanTypeCache : IPlanTypeCache

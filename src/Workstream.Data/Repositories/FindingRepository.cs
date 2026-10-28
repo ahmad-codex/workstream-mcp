@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Workstream.Core.Domain;
+using Workstream.Mcp.Notifications;
 
 namespace Workstream.Data.Repositories;
 
@@ -208,7 +209,7 @@ public sealed class FindingRepository : IFindingRepository
     public async Task<Finding?> UpdateStatusWithClaimAsync(
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
         string eventType, string? eventPayloadJson, CancellationToken ct = default,
-        Func<Finding, Task>? inTransaction = null)
+        Func<Finding, IOutboxScope, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -243,7 +244,17 @@ public sealed class FindingRepository : IFindingRepository
 
         var finding = updated.ToDomain();
         if (inTransaction is not null)
-            await OutboxTransaction.RunAsync(conn, tx, () => inTransaction(finding)).ConfigureAwait(false);
+        {
+            var scope = new OutboxScope(conn, tx);
+            try
+            {
+                await inTransaction(finding, scope).ConfigureAwait(false);
+            }
+            finally
+            {
+                scope.Close();
+            }
+        }
         await tx.CommitAsync(ct).ConfigureAwait(false);
         return finding;
     }

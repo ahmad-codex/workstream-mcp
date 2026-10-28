@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
+using Workstream.Mcp.Notifications;
 
 namespace Workstream.Data.Repositories;
 
@@ -44,7 +45,7 @@ public interface IFindingRepository
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
         string eventType, string? eventPayloadJson,
         CancellationToken ct = default,
-        Func<Finding, Task>? inTransaction = null);
+        Func<Finding, IOutboxScope, Task>? inTransaction = null);
 
     /// <summary>
     /// Extend an active claim's TTL on a finding. Returns the updated row with the new

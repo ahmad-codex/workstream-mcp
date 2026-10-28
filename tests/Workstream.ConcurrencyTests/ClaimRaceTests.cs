@@ -7,6 +7,7 @@ using FluentAssertions;
 using Workstream.Core.Errors;
 using Workstream.Data;
 using Workstream.Data.Repositories;
+using Workstream.Mcp.Notifications;
 using Xunit;
 
 namespace Workstream.ConcurrencyTests;
@@ -234,8 +235,8 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
         var (oldOwner, newOwner) = (actorIds[0], actorIds[1]);
         var boardId = await TestData.SeedBoardAsync(_pg.ConnectionFactory, planId).ConfigureAwait(false);
         var outbox = new OutboxRepository(_pg.ConnectionFactory);
-        Func<string, Func<Workstream.Core.Domain.WorkTask, Task>> enqueueAs = owner =>
-            t => outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status, owner);
+        Func<string, Func<Workstream.Core.Domain.WorkTask, IOutboxScope, Task>> enqueueAs = owner =>
+            (t, scope) => outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status, owner, scope);
 
         var stale = await _tasks.ClaimNextAsync(planId, oldOwner, "developer", TimeSpan.FromHours(1),
             inTransaction: enqueueAs("old")).ConfigureAwait(false);
@@ -257,7 +258,7 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
         var results = await Task.WhenAll(
             _tasks.UpdateStatusWithClaimAsync(stale!.ClaimToken, oldOwner, "in_progress", clearClaim: false,
                 eventType: "started_work", eventPayloadJson: null,
-                inTransaction: t => { callbackRanForOldOwner = true; return enqueueAs("old")(t); }),
+                inTransaction: (t, scope) => { callbackRanForOldOwner = true; return enqueueAs("old")(t, scope); }),
             _tasks.UpdateStatusWithClaimAsync(fresh!.ClaimToken, newOwner, "in_progress", clearClaim: false,
                 eventType: "started_work", eventPayloadJson: null,
                 inTransaction: enqueueAs("new"))).ConfigureAwait(false);
@@ -287,9 +288,9 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
 
         var act = () => _tasks.UpdateStatusWithClaimAsync(claim!.ClaimToken, actorIds[0], "in_progress", clearClaim: false,
             eventType: "started_work", eventPayloadJson: null,
-            inTransaction: async t =>
+            inTransaction: async (t, scope) =>
             {
-                await outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status).ConfigureAwait(false);
+                await outbox.EnqueueBoardSyncAsync(t.Id, boardId, "column", t.Status, scope: scope).ConfigureAwait(false);
                 throw new InvalidOperationException("crash after the outbox write");
             });
         await act.Should().ThrowAsync<InvalidOperationException>().ConfigureAwait(false);
@@ -301,6 +302,27 @@ public sealed class ClaimRaceTests : IClassFixture<PostgresFixture>
             "SELECT count(*) FROM board_sync_log WHERE task_id = @id", new { id = taskIds[0] }).ConfigureAwait(false);
         status.Should().Be("claimed", "the state change rolled back");
         queued.Should().Be(0, "the outbox row rolled back with it");
+    }
+
+    [Fact]
+    public async Task OutboxScope_UsedAfterCommit_ThrowsAndQueuesNothing()
+    {
+        var (planId, taskIds, actorIds) = await TestData.SeedAsync(_pg.ConnectionFactory, taskCount: 1, actorCount: 1)
+            .ConfigureAwait(false);
+        var boardId = await TestData.SeedBoardAsync(_pg.ConnectionFactory, planId).ConfigureAwait(false);
+        var outbox = new OutboxRepository(_pg.ConnectionFactory);
+        IOutboxScope? captured = null;
+        var claim = await _tasks.ClaimNextAsync(planId, actorIds[0], "developer", TimeSpan.FromHours(1),
+            inTransaction: (_, scope) => { captured = scope; return Task.CompletedTask; }).ConfigureAwait(false);
+        claim.Should().NotBeNull();
+
+        var late = () => outbox.EnqueueBoardSyncAsync(taskIds[0], boardId, "column", "claimed", scope: captured);
+        await late.Should().ThrowAsync<InvalidOperationException>().ConfigureAwait(false);
+
+        await using var conn = await _pg.ConnectionFactory.OpenAsync().ConfigureAwait(false);
+        var queued = await conn.ExecuteScalarAsync<long>(
+            "SELECT count(*) FROM board_sync_log WHERE task_id = @id", new { id = taskIds[0] }).ConfigureAwait(false);
+        queued.Should().Be(0, "work that outlives the transaction must not write anywhere");
     }
     [Fact]
     public async Task RefreshLoop_WithoutProgress_IsRefused_UntilTheHolderRecordsProgress()

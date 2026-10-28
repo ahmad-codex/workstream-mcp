@@ -2,17 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Workstream.Mcp.Notifications;
 
 namespace Workstream.Data.Repositories;
 
 public interface IOutboxRepository
 {
-    Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default);
+    Task<long> EnqueueBoardSyncAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, IOutboxScope? scope = null, CancellationToken ct = default);
     Task<IReadOnlyList<BoardSyncRow>> ClaimBoardSyncBatchAsync(int batchSize, CancellationToken ct = default);
     Task MarkBoardSyncResultAsync(long id, string result, string? error, string? githubResponseId, TimeSpan? retryDelay, CancellationToken ct = default);
     Task<bool> RecentSyncMarkerExistsAsync(Guid boardItemTaskId, TimeSpan within, CancellationToken ct = default);
 
-    Task<long> EnqueueSlackAsync(SlackNotifyRow row, CancellationToken ct = default);
+    Task<long> EnqueueSlackAsync(SlackNotifyRow row, IOutboxScope? scope = null, CancellationToken ct = default);
     Task<IReadOnlyList<SlackNotifyRow>> ClaimSlackBatchAsync(int batchSize, CancellationToken ct = default);
     Task MarkSlackResultAsync(long id, string result, string? error, string? slackTs, TimeSpan? retryDelay, CancellationToken ct = default);
     Task<string?> GetParentSlackTsAsync(string entityType, Guid entityId, CancellationToken ct = default);

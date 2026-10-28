@@ -67,9 +67,9 @@ public sealed class StartWorkTool : McpTool<StartWorkInput, StartWorkOutput>
         var updated = await _tasks.UpdateStatusWithClaimAsync(
             input.ClaimToken, ctx.ActorId, TaskStatus.InProgress, clearClaim: false,
             eventType: "started_work", eventPayloadJson: null, ct,
-            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(
+            inTransaction: (t, scope) => NotificationHelpers.EnqueueBoardAndSlackAsync(
                 _boardSync, _slack, _plans, plan, pt, t, "task.in_progress", ctx, ct,
-                assigneeGithubUsername: ctx.GithubUsername, notifySlack: true)).ConfigureAwait(false)
+                assigneeGithubUsername: ctx.GithubUsername, notifySlack: true, scope: scope)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         return new StartWorkOutput(updated.Id, updated.Status);
@@ -138,9 +138,9 @@ public sealed class SubmitFindingsTool : McpTool<SubmitFindingsInput, SubmitFind
             input.ClaimToken, ctx.ActorId, targetStatus, clearClaim,
             eventType: "findings_submitted",
             eventPayloadJson: JsonSerializer.Serialize(new { count = input.Findings.Count }), ct,
-            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t,
+            inTransaction: (t, scope) => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t,
                 t.Status == TaskStatus.Done ? "task.done" : "task.review", ctx, ct,
-                extraTokens: findingsExtras, notifySlack: true)).ConfigureAwait(false)
+                extraTokens: findingsExtras, notifySlack: true, scope: scope)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         return new SubmitFindingsOutput(updated.Status, inserted.Select(f => f.Id).ToList());
@@ -228,12 +228,12 @@ public sealed class SubmitVerificationVerdictTool : McpTool<SubmitVerificationVe
             eventType: "verdict_submitted",
             eventPayloadJson: JsonSerializer.Serialize(new { verdict = input.Verdict, verdict_id = verdict.Id }),
             ct,
-            inTransaction: async f =>
+            inTransaction: async (f, scope) =>
             {
                 await NotificationHelpers.EnqueueFindingSlackAsync(_slack, _plans, plan, pt, f, task.Id,
-                    verdictSlackType, ctx, ct, verdictExtras.Count > 0 ? verdictExtras : null).ConfigureAwait(false);
+                    verdictSlackType, ctx, ct, verdictExtras.Count > 0 ? verdictExtras : null, scope).ConfigureAwait(false);
                 // Refresh the parent task card so the audit ledger reflects this verdict.
-                await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct).ConfigureAwait(false);
+                await NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct, scope).ConfigureAwait(false);
             }).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
@@ -316,7 +316,7 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             eventType: "attempt_submitted",
             eventPayloadJson: JsonSerializer.Serialize(new { attempt_id = attempt.Id, attempt_number = attempt.AttemptNumber }),
             ct,
-            inTransaction: t => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t, "task.review", ctx, ct, notifySlack: true)).ConfigureAwait(false)
+            inTransaction: (t, scope) => NotificationHelpers.EnqueueBoardAndSlackAsync(_boardSync, _slack, _plans, plan, pt, t, "task.review", ctx, ct, notifySlack: true, scope: scope)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
 
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
@@ -345,7 +345,7 @@ public sealed class SubmitAttemptTool : McpTool<SubmitAttemptInput, SubmitAttemp
             eventPayloadJson: JsonSerializer.Serialize(new { attempt_id = attempt.Id, attempt_number = attempt.AttemptNumber }),
             ct,
             // Refresh the parent task card so the audit ledger shows the fix attempt.
-            inTransaction: _ => NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct)).ConfigureAwait(false)
+            inTransaction: (_, scope) => NotificationHelpers.EnqueueBoardRefreshAsync(_boardSync, plan, pt, task, ct, scope)).ConfigureAwait(false)
                       ?? throw new WorkstreamException(WorkstreamError.StaleClaim());
         return new SubmitAttemptOutput(attempt.Id, attempt.AttemptNumber, updated.Status);
     }
@@ -712,15 +712,16 @@ internal static class NotificationHelpers
         CancellationToken ct,
         System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null,
         string? assigneeGithubUsername = null,
-        bool notifySlack = false)
+        bool notifySlack = false,
+        Notifications.IOutboxScope? scope = null)
     {
         if (plan.PrimaryBoardId is { } boardId)
         {
             var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
-            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername, ct).ConfigureAwait(false);
+            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, assigneeGithubUsername, scope, ct).ConfigureAwait(false);
         }
         if (notifySlack)
-            await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
+            await slack.EnqueueForTaskAsync(plan, pt, task, notificationType, ctx, extraTokens, scope, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -733,12 +734,13 @@ internal static class NotificationHelpers
         Plan plan,
         (PlanType Row, StateGraph Graph) pt,
         WorkTask task,
-        CancellationToken ct)
+        CancellationToken ct,
+        Notifications.IOutboxScope? scope = null)
     {
         if (plan.PrimaryBoardId is { } boardId)
         {
             var column = StateMachineService.ResolveBoardColumn(pt.Graph, task.Status, planOverride: null);
-            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, ct: ct).ConfigureAwait(false);
+            await boardSync.EnqueueAsync(task.Id, boardId, column, task.Status, scope: scope, ct: ct).ConfigureAwait(false);
         }
     }
 
@@ -752,9 +754,10 @@ internal static class NotificationHelpers
         string notificationType,
         RequestContext ctx,
         CancellationToken ct,
-        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null)
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? extraTokens = null,
+        Notifications.IOutboxScope? scope = null)
     {
-        await slack.EnqueueForFindingAsync(plan, pt, finding, taskId, notificationType, ctx, extraTokens, ct).ConfigureAwait(false);
+        await slack.EnqueueForFindingAsync(plan, pt, finding, taskId, notificationType, ctx, extraTokens, scope, ct).ConfigureAwait(false);
     }
 
     /// <summary>
