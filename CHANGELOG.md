@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-28
+
 ### Changed
 
 - Outbox writes from claim-gated changes now take the transaction explicitly: the `inTransaction`
@@ -168,7 +170,8 @@ First version. Built between 2026-05-18 and 2026-05-23.
 - Docker images and compose files for production, Caddy, Grafana and Prometheus configuration.
 - Unit, integration (Testcontainers) and concurrency test projects, and a GitHub Actions workflow.
 
-[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/ahmad-codex/workstream-mcp/compare/v0.2.1...v0.2.2

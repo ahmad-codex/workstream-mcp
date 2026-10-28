@@ -361,7 +361,7 @@ dotnet run --project src/Workstream.Api
 
 ## Status
 
-Early, version 0.3.0. Known gaps:
+Early, version 0.3.1. Known gaps:
 
 - `claim_next_attempt_for_review` is a stub.
 - `workstream-admin apply` (declarative bootstrap) only prints the file.
