@@ -21,6 +21,7 @@ public interface ISlackNotifyEnqueue
         string notificationType,
         RequestContext ctx,
         IReadOnlyDictionary<string, string>? extraTokens = null,
+        IOutboxScope? scope = null,
         CancellationToken ct = default);
 
     Task EnqueueForFindingAsync(
@@ -31,6 +32,7 @@ public interface ISlackNotifyEnqueue
         string notificationType,
         RequestContext ctx,
         IReadOnlyDictionary<string, string>? extraTokens = null,
+        IOutboxScope? scope = null,
         CancellationToken ct = default);
 
     Task EnqueueForPlanAsync(
@@ -39,5 +41,6 @@ public interface ISlackNotifyEnqueue
         string notificationType,
         RequestContext ctx,
         IReadOnlyDictionary<string, string>? extraTokens = null,
+        IOutboxScope? scope = null,
         CancellationToken ct = default);
 }

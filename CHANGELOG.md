@@ -6,6 +6,13 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Outbox writes from claim-gated changes now take the transaction explicitly: the `inTransaction`
+  callback receives an `IOutboxScope` that the board and Slack enqueues pass along, instead of
+  joining it through an `AsyncLocal`. A scope used after its transaction commits throws, so work
+  that outlives the transaction fails loudly instead of writing elsewhere.
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

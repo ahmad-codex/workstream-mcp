@@ -116,12 +116,12 @@ public sealed class ClaimNextTaskTool : McpTool<ClaimNextTaskInput, ClaimNextTas
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
 
         var claimed = await _tasks.ClaimNextAsync(input.PlanId, ctx.ActorId, input.Role, ttl, ct,
-            inTransaction: async task =>
+            inTransaction: async (task, scope) =>
             {
                 if (plan.PrimaryBoardId is { } boardId)
                 {
                     var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, task.Status);
-                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+                    await _board.EnqueueAsync(task.Id, boardId, column, task.Status, ctx.GithubUsername, scope, ct).ConfigureAwait(false);
                 }
             }).ConfigureAwait(false);
         if (claimed is null)
@@ -178,12 +178,12 @@ public sealed class ClaimSpecificTaskTool : McpTool<ClaimSpecificTaskInput, Clai
         var ttl = ClaimHelpers.ResolveTtl(pt.RoleTtlsJson, input.Role, requested);
 
         var claimed = await _tasks.ClaimSpecificAsync(input.TaskId, ctx.ActorId, input.Role, ttl, ct,
-            inTransaction: async claimedTask =>
+            inTransaction: async (claimedTask, scope) =>
             {
                 if (plan.PrimaryBoardId is { } boardId)
                 {
                     var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(graph, claimedTask.Status);
-                    await _board.EnqueueAsync(claimedTask.Id, boardId, column, claimedTask.Status, ctx.GithubUsername, ct).ConfigureAwait(false);
+                    await _board.EnqueueAsync(claimedTask.Id, boardId, column, claimedTask.Status, ctx.GithubUsername, scope, ct).ConfigureAwait(false);
                 }
             }).ConfigureAwait(false);
         if (claimed is null)
@@ -430,7 +430,7 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
     protected override async Task<ReleaseClaimOutput> RunAsync(ReleaseClaimInput input, RequestContext ctx, CancellationToken ct)
     {
         var task = await _tasks.ReleaseClaimAsync(input.ClaimToken, ctx.ActorId, input.Reason, resetStatusToPending: true, ct,
-            inTransaction: async released =>
+            inTransaction: async (released, scope) =>
             {
                 // Move the card back to Backlog. Don't fire Slack — release_claim is normal
                 // claim churn and shouldn't generate channel noise.
@@ -443,7 +443,7 @@ public sealed class ReleaseClaimTool : McpTool<ReleaseClaimInput, ReleaseClaimOu
                         var column = Workstream.Core.StateMachine.StateMachineService.ResolveBoardColumn(pt.Value.Graph, released.Status);
                         // Empty string = clear assignees on the bound card so the Backlog
                         // doesn't show a phantom owner after the work returns to the pool.
-                        await _board.EnqueueAsync(released.Id, boardId, column, released.Status, assigneeGithubUsername: "", ct: ct).ConfigureAwait(false);
+                        await _board.EnqueueAsync(released.Id, boardId, column, released.Status, assigneeGithubUsername: "", scope: scope, ct: ct).ConfigureAwait(false);
                     }
                 }
             }).ConfigureAwait(false);

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Workstream.Core.Domain;
+using Workstream.Mcp.Notifications;
 
 namespace Workstream.Data.Repositories;
 
@@ -29,8 +30,8 @@ public interface ITaskRepository
     /// <summary>
     /// Atomically claim the next available task on the plan for the given role.
     /// Returns null if no claimable work exists. Implements the FOR UPDATE SKIP LOCKED
-    /// query in §6.1. <paramref name="inTransaction"/> runs before commit, inside
-    /// <see cref="OutboxTransaction"/>, so the outbox rows it writes commit with the claim.
+    /// query in §6.1. <paramref name="inTransaction"/> runs before commit with the
+    /// claim's <see cref="IOutboxScope"/>, so the outbox rows it writes commit with the claim.
     /// </summary>
     Task<ClaimedTask?> ClaimNextAsync(
         Guid planId,
@@ -38,7 +39,7 @@ public interface ITaskRepository
         string role,
         TimeSpan ttl,
         CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null);
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null);
 
     /// <summary>
     /// Atomically claim a specific task by id. Fails (returns null) if the task is held by
@@ -50,7 +51,7 @@ public interface ITaskRepository
         string role,
         TimeSpan ttl,
         CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null);
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null);
 
     /// <summary>
     /// Release a claim. Returns the updated row (claim columns cleared, status possibly reset).
@@ -61,7 +62,7 @@ public interface ITaskRepository
         string? reason,
         bool resetStatusToPending,
         CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null);
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null);
 
     /// <summary>
     /// Extend an active claim's TTL. Returns the updated row with the new claimed_until,
@@ -91,7 +92,7 @@ public interface ITaskRepository
         string eventType,
         string? eventPayloadJson,
         CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null);
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null);
 
     /// <summary>
     /// Override the status without holding a claim. Requires the caller to have already

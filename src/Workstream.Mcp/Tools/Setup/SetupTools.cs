@@ -358,7 +358,7 @@ public sealed class ArchivePlanTool : McpTool<ArchivePlanInput, ArchivePlanOutpu
         {
             var extra = new Dictionary<string, string> { ["outcome"] = outcome };
             if (reason is not null) extra["reason"] = reason;
-            await _slack.EnqueueForPlanAsync(archived, pt.Value, "plan.archived", ctx, extra, ct).ConfigureAwait(false);
+            await _slack.EnqueueForPlanAsync(archived, pt.Value, "plan.archived", ctx, extra, ct: ct).ConfigureAwait(false);
         }
 
         return new ArchivePlanOutput(archived.Id, archived.Status, outcome, AlreadyArchived: false);

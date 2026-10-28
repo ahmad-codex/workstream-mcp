@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Npgsql;
 using Workstream.Core.Domain;
+using Workstream.Mcp.Notifications;
 
 namespace Workstream.Data.Repositories;
 
@@ -226,7 +227,7 @@ public sealed class TaskRepository : ITaskRepository
 
     public async Task<ClaimedTask?> ClaimNextAsync(
         Guid planId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null)
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -272,7 +273,7 @@ public sealed class TaskRepository : ITaskRepository
 
     public async Task<ClaimedTask?> ClaimSpecificAsync(
         Guid taskId, Guid actorId, string role, TimeSpan ttl, CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null)
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -316,7 +317,7 @@ public sealed class TaskRepository : ITaskRepository
 
     public async Task<WorkTask?> ReleaseClaimAsync(
         Guid claimToken, Guid actorId, string? reason, bool resetStatusToPending, CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null)
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -393,7 +394,7 @@ public sealed class TaskRepository : ITaskRepository
     public async Task<WorkTask?> UpdateStatusWithClaimAsync(
         Guid claimToken, Guid actorId, string newStatus, bool clearClaim,
         string eventType, string? eventPayloadJson, CancellationToken ct = default,
-        Func<WorkTask, Task>? inTransaction = null)
+        Func<WorkTask, IOutboxScope, Task>? inTransaction = null)
     {
         await using var conn = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -547,10 +548,20 @@ public sealed class TaskRepository : ITaskRepository
     }
 
     private static async Task CommitAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, WorkTask task, Func<WorkTask, Task>? inTransaction, CancellationToken ct)
+        NpgsqlConnection conn, NpgsqlTransaction tx, WorkTask task, Func<WorkTask, IOutboxScope, Task>? inTransaction, CancellationToken ct)
     {
         if (inTransaction is not null)
-            await OutboxTransaction.RunAsync(conn, tx, () => inTransaction(task)).ConfigureAwait(false);
+        {
+            var scope = new OutboxScope(conn, tx);
+            try
+            {
+                await inTransaction(task, scope).ConfigureAwait(false);
+            }
+            finally
+            {
+                scope.Close();
+            }
+        }
         await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 

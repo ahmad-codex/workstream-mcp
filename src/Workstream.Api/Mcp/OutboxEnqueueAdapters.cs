@@ -23,8 +23,8 @@ public sealed class OutboxBoardSyncEnqueue : IBoardSyncEnqueue
     private readonly IOutboxRepository _outbox;
     public OutboxBoardSyncEnqueue(IOutboxRepository outbox) => _outbox = outbox;
 
-    public Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, CancellationToken ct = default)
-        => _outbox.EnqueueBoardSyncAsync(taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername, ct);
+    public Task EnqueueAsync(Guid taskId, Guid boardId, string targetColumn, string targetStatus, string? assigneeGithubUsername = null, IOutboxScope? scope = null, CancellationToken ct = default)
+        => _outbox.EnqueueBoardSyncAsync(taskId, boardId, targetColumn, targetStatus, assigneeGithubUsername, scope, ct);
 }
 
 /// <summary>
@@ -55,6 +55,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
         Plan plan, (PlanType Row, StateGraph Graph) pt, WorkTask task,
         string notificationType, RequestContext ctx,
         IReadOnlyDictionary<string, string>? extraTokens = null,
+        IOutboxScope? scope = null,
         CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
@@ -110,10 +111,10 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             Body = body, BlocksJson = blocks, Color = identity.Color,
             AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
-        }, ct).ConfigureAwait(false);
+        }, scope, ct).ConfigureAwait(false);
     }
 
-    public async Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, Finding finding, Guid taskId, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, CancellationToken ct = default)
+    public async Task EnqueueForFindingAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, Finding finding, Guid taskId, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, IOutboxScope? scope = null, CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
@@ -168,10 +169,10 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             Body = body, BlocksJson = blocks, Color = identity.Color,
             AuthorName = identity.AuthorName, AuthorIcon = identity.AuthorIcon, AuthorLink = identity.AuthorLink,
             NextAttemptAt = DateTime.UtcNow,
-        }, ct).ConfigureAwait(false);
+        }, scope, ct).ConfigureAwait(false);
     }
 
-    public async Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, CancellationToken ct = default)
+    public async Task EnqueueForPlanAsync(Plan plan, (PlanType Row, StateGraph Graph) pt, string notificationType, RequestContext ctx, IReadOnlyDictionary<string, string>? extraTokens = null, IOutboxScope? scope = null, CancellationToken ct = default)
     {
         var channel = await ResolveChannelAsync(plan, ct).ConfigureAwait(false);
         if (channel is null) return;
@@ -193,7 +194,7 @@ public sealed class OutboxSlackNotifyEnqueue : ISlackNotifyEnqueue
             ChannelId = channel, NotificationType = notificationType,
             Body = body, BlocksJson = blocks,
             NextAttemptAt = DateTime.UtcNow,
-        }, ct).ConfigureAwait(false);
+        }, scope, ct).ConfigureAwait(false);
     }
 
     /// <summary>
