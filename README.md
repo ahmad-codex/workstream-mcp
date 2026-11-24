@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com/)
 [![MCP](https://img.shields.io/badge/MCP-server-black.svg)](https://modelcontextprotocol.io/)
+[![ahmad-codex/workstream-mcp MCP server](https://glama.ai/mcp/servers/ahmad-codex/workstream-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ahmad-codex/workstream-mcp)
 
 An MCP server that keeps the state of record for work done by AI agents and humans together:
 plans, tasks, claims, findings, fix attempts and verdicts, stored in Postgres, mirrored to
